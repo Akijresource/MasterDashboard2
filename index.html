@@ -5,54 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DCOO Master Dashboard</title>
   
-  <!-- Polyfill for Recharts/React environment variables to prevent silent crashes -->
-  <script>window.process = { env: { NODE_ENV: 'production' } };</script>
-
-  <!-- Tailwind CSS -->
+  <!-- CDNs for React, ReactDOM, Babel, Tailwind, and Recharts -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
   
-  <!-- React, ReactDOM, and Babel (Strict versions via jsdelivr) -->
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js"></script>
+  <!-- Pinned Recharts to prevent UMD crash -->
+  <script src="https://cdn.jsdelivr.net/npm/recharts@2.1.9/umd/Recharts.min.js"></script>
   
-  <!-- Recharts (Pinned to 2.1.9 to fix the missing UMD export bug in the latest version) -->
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/recharts@2.1.9/umd/Recharts.min.js"></script>
-  
-  <!-- Babel compiler -->
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.4/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script>window.process = { env: { NODE_ENV: 'production' } };</script>
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans">
   
-  <!-- Root div with native HTML loading state so the screen is never fully blank -->
   <div id="root">
-    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background-color: #f8fafc; font-family: sans-serif;">
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh;">
       <div style="width: 50px; height: 50px; border: 5px solid #3b82f6; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-      <p style="margin-top: 20px; color: #64748b; font-weight: 600;">Initializing Dashboard Engine...</p>
+      <p style="margin-top: 20px; font-weight: 600;">Initializing Live Engine...</p>
       <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
     </div>
   </div>
 
-  <!-- Global Error Catcher -->
-  <script>
-    window.addEventListener('error', function(e) {
-      const root = document.getElementById('root');
-      if (root && root.innerHTML.includes('Initializing')) {
-        root.innerHTML = 
-          '<div style="max-w: 600px; margin: 50px auto; padding: 25px; background: #fef2f2; border: 2px solid #ef4444; border-radius: 12px; font-family: sans-serif;">' +
-          '<h2 style="color: #b91c1c; margin-top: 0; display: flex; align-items: center;"><svg style="width: 24px; height: 24px; margin-right: 10px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Critical Startup Error</h2>' +
-          '<p style="color: #7f1d1d;"><strong>Message:</strong> ' + e.message + '</p>' +
-          '<p style="color: #7f1d1d; margin-top: 15px; font-size: 14px; line-height: 1.5;">This happens if a required script (like React or Recharts) was blocked by your browser, or if there is a network issue. <br/><br/><strong>Troubleshooting:</strong><br/>1. Disable ad-blockers or strict tracking protection for this page.<br/>2. Press F12 to check the browser console for details.</p>' +
-          '</div>';
-      }
-    });
-  </script>
-
   <script type="text/babel">
-    // Safety check to ensure libraries loaded
-    if (!window.React || !window.ReactDOM) throw new Error("React library failed to load from CDN.");
-    if (!window.Recharts) throw new Error("Recharts library failed to load from CDN.");
-
     const { useState, useMemo, useEffect } = React;
     const { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } = window.Recharts;
 
@@ -74,32 +49,16 @@
     const Sparkles = (p) => <Icon {...p} path="M12 3v3M12 18v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M3 12h3M18 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12M9 12a3 3 0 106 0 3 3 0 00-6 0z"/>;
     const FilterIcon = (p) => <Icon {...p} path="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>;
     const LayoutDashboard = (p) => <Icon {...p} path="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"/>;
+    const Wrench = (p) => <Icon {...p} path="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 9.36l-7.1 7.1a2.12 2.12 0 0 1-3-3l7.1-7.1a6 6 0 0 1 9.36-7.94l-3.77 3.77z"/>;
 
-    // --- GOOGLE SHEETS CONFIG ---
     const SHEET_ID = '17xgLNSWgPaPa-WR6MpPa5dcvQUoUaQKqlT6OyVCoJ4U';
     const getSheetUrl = (sheetName) => `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
 
-    // --- CSV PARSER ---
-    const parseCSV = (csvStr) => {
-      if (!csvStr || csvStr.trim().startsWith('<')) return []; // Failsafe if Google returns HTML login page
-      const lines = csvStr.trim().split('\n').filter(line => line.trim() !== '');
-      if (lines.length === 0) return [];
-      
-      const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
-      return lines.slice(1).map(line => {
-        const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-        const obj = {};
-        headers.forEach((h, i) => {
-          let val = values[i] || '';
-          obj[h] = val.replace(/^"|"$/g, '').trim();
-        });
-        return obj;
-      });
-    };
-
+    // --- HELPER FUNCTIONS ---
     const safeNum = (val) => {
-      if (!val || val === '#DIV/0!' || val === '#REF!' || val === '#N/A') return 0;
-      const num = parseFloat(val.toString().replace(/,/g, ''));
+      if (!val || typeof val !== 'string') return typeof val === 'number' ? val : 0;
+      if (val === '#DIV/0!' || val === '#REF!' || val === '#N/A' || val === '#VALUE!') return 0;
+      const num = parseFloat(val.replace(/,/g, ''));
       return isNaN(num) ? 0 : num;
     };
 
@@ -110,7 +69,103 @@
       return isNaN(num) ? 0 : num;
     };
 
-    // --- COMPONENTS ---
+    // --- SMART CSV PARSERS ---
+    
+    // 1. Standard Parser (For OEE, RACI, IC, PC)
+    const parseSmartCSV = (csvStr) => {
+      if (!csvStr) return [];
+      const lines = csvStr.trim().split('\n').filter(line => line.trim() !== '');
+      if (lines.length === 0) return [];
+      
+      // Auto-detect header row (skip empty top rows)
+      let headerIdx = lines.findIndex(l => l.includes('SBU') || l.includes('Project Name') || l.includes('Card No'));
+      if (headerIdx === -1) headerIdx = 0; 
+      
+      const headers = lines[headerIdx].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(h => h.replace(/^"|"$/g, '').trim());
+      const data = [];
+      
+      for (let i = headerIdx + 1; i < lines.length; i++) {
+        const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+        if (values.join('').trim() === '') continue; // Skip totally blank lines
+        const obj = {};
+        headers.forEach((h, idx) => {
+          let val = values[idx] || '';
+          obj[h] = val.replace(/^"|"$/g, '').trim(); // Notice: if multiple columns share a header name (like MTTR), JS naturally keeps the LAST one.
+        });
+        data.push(obj);
+      }
+      return data;
+    };
+
+    // 2. Vertical Block Parser (Specifically built for the MOH COST Sheet structure)
+    const parseMOHCSV = (csvStr) => {
+      if (!csvStr) return [];
+      const lines = csvStr.trim().split('\n').filter(line => line.trim() !== '');
+      const data = [];
+      
+      let currentSbu = 'Unknown SBU';
+      let currentMonth = 'Latest';
+      let activeHeaders = [];
+
+      for (let i = 0; i < lines.length; i++) {
+        const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+        
+        // Detect SBU Block
+        const sbuCell = cols.find(c => c.includes('SBU DATASTREAMS:'));
+        if (sbuCell) {
+          currentSbu = sbuCell.split(':')[1].trim();
+        } 
+        // Detect Month row
+        else if (cols.includes('Month')) {
+          const mIdx = cols.indexOf('Month');
+          if (cols[mIdx + 1]) currentMonth = cols[mIdx + 1];
+        } 
+        // Detect Header Row
+        else if (cols.includes('Transaction Name')) {
+          activeHeaders = cols;
+        }
+        // Detect Data Row (Has a Serial Number in Col 0, and Transaction text in Col 1)
+        else if (!isNaN(parseInt(cols[0])) && cols[1] && cols[1].length > 2) {
+          let cost = 0;
+          let cpu = 0;
+          let foundActual = false;
+
+          // Dynamically find 'Actual' costs in the local header block
+          if (activeHeaders.length > 0) {
+            for (let j = 0; j < activeHeaders.length; j++) {
+              const h = activeHeaders[j].toLowerCase();
+              if (h.includes('actual') && (h.includes('cost') || h.includes('bdt') || h.includes('expense'))) {
+                foundActual = true;
+                if (h.includes('/') || h.includes('per') || h.includes('pcs') || h.includes('mt') || h.includes('cft')) {
+                  cpu += safeNum(cols[j]);
+                } else {
+                  cost += safeNum(cols[j]);
+                }
+              }
+            }
+          }
+
+          // Fallback if headers were messy or not found (Default to columns 13 and 14 for Cost and CPU)
+          if (!foundActual) {
+             cost = safeNum(cols[13]) || safeNum(cols[14]) || 0;
+             cpu = safeNum(cols[15]) || safeNum(cols[14]) || 0;
+          }
+
+          if (cost > 0 || cpu > 0 || cols[1].toLowerCase().includes('salary')) {
+            data.push({
+              SBU: currentSbu,
+              Month: currentMonth,
+              Category: cols[1].replace(/^- |^MOH - /g, '').trim(),
+              'MOH Cost': cost,
+              'Cost per Unit': cpu
+            });
+          }
+        }
+      }
+      return data;
+    };
+
+    // --- SHARED COMPONENTS ---
     const KPICard = ({ title, value, subtext, icon: IconComponent, colorClass }) => (
       <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center space-x-4">
         <div className={`p-4 rounded-xl ${colorClass}`}>
@@ -145,7 +200,7 @@
       <div className="flex flex-col min-w-[150px]">
         <label className="text-xs font-semibold text-slate-500 mb-1 ml-1">{label}</label>
         <select 
-          className="bg-white border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 block w-full p-2"
+          className="bg-white border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 block w-full p-2.5 shadow-sm"
           value={value} 
           onChange={(e) => onChange(e.target.value)}
         >
@@ -156,58 +211,82 @@
     );
 
     // --- SECTIONS ---
+
     const SectionOEE = ({ rawData }) => {
       const [filters, setFilters] = useState({ sbu: 'All', month: 'All', section: 'All' });
+
+      // CASCADING FILTERS
       const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
-      const months = [...new Set(rawData.map(d => d.Month))].filter(Boolean);
-      const sections = [...new Set(rawData.map(d => d.Section))].filter(Boolean);
+      const months = [...new Set(rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => d.Month))].filter(Boolean);
+      const sections = [...new Set(rawData.filter(d => 
+        (filters.sbu === 'All' || d.SBU === filters.sbu) && (filters.month === 'All' || d.Month === filters.month)
+      ).map(d => d.Section))].filter(Boolean);
 
       const filteredData = useMemo(() => {
         return rawData.filter(d => 
           (filters.sbu === 'All' || d.SBU === filters.sbu) &&
           (filters.month === 'All' || d.Month === filters.month) &&
           (filters.section === 'All' || d.Section === filters.section)
-        ).map(d => ({
-          ...d,
-          parsedOEE: formatPercent(d.OEE),
-          parsedNPT: formatPercent(d['NPT %']),
-          parsedTarget: safeNum(d.Target),
-          parsedActual: safeNum(d['Actual Output'])
-        }));
+        ).map(d => {
+          // Dynamically find keys in case headers got truncated in the export
+          const actualOutputKey = Object.keys(d).find(k => k.toLowerCase().includes('actual out')) || 'Actual Output';
+          const targetKey = Object.keys(d).find(k => k.toLowerCase().includes('target')) || 'Target';
+          const shiftCapKey = Object.keys(d).find(k => k.toLowerCase().includes('shift capac')) || 'Shift Capacity';
+
+          return {
+            ...d,
+            parsedOEE: formatPercent(d.OEE),
+            parsedNPT: formatPercent(d['NPT %']),
+            parsedMTTR: safeNum(d.MTTR), // Grabs overall MTTR
+            parsedMTBF: safeNum(d.MTBF), // Grabs overall MTBF
+            parsedTarget: safeNum(d[targetKey]),
+            parsedActual: safeNum(d[actualOutputKey]),
+            parsedCap: safeNum(d[shiftCapKey])
+          };
+        });
       }, [rawData, filters]);
 
-      const avgOEE = filteredData.length ? (filteredData.reduce((acc, curr) => acc + curr.parsedOEE, 0) / filteredData.length) : 0;
-      const avgNPT = filteredData.length ? (filteredData.reduce((acc, curr) => acc + curr.parsedNPT, 0) / filteredData.length) : 0;
-      const totalTarget = filteredData.reduce((acc, curr) => acc + curr.parsedTarget, 0);
-      const totalActual = filteredData.reduce((acc, curr) => acc + curr.parsedActual, 0);
+      const avgOEE = filteredData.length ? (filteredData.reduce((a, c) => a + c.parsedOEE, 0) / filteredData.length) : 0;
+      const avgNPT = filteredData.length ? (filteredData.reduce((a, c) => a + c.parsedNPT, 0) / filteredData.length) : 0;
+      const totalTarget = filteredData.reduce((a, c) => a + c.parsedTarget, 0);
+      const totalActual = filteredData.reduce((a, c) => a + c.parsedActual, 0);
+      const avgMTTR = filteredData.length ? (filteredData.reduce((a, c) => a + c.parsedMTTR, 0) / filteredData.length) : 0;
+      const avgMTBF = filteredData.length ? (filteredData.reduce((a, c) => a + c.parsedMTBF, 0) / filteredData.length) : 0;
+      const totalCap = filteredData.reduce((a, c) => a + c.parsedCap, 0);
 
       const aiInsights = useMemo(() => {
         const insights = [];
         if (avgOEE < 85 && filteredData.length > 0) {
-          insights.push(`The Overall Average OEE is currently ${avgOEE.toFixed(2)}%, falling below the critical 85% corporate target.`);
+          insights.push(`The Average OEE is currently ${avgOEE.toFixed(2)}%, falling below the critical 85% target.`);
           const worstNpt = [...filteredData].sort((a, b) => b.parsedNPT - a.parsedNPT)[0];
           if (worstNpt && worstNpt.parsedNPT > 20) {
-            insights.push(`Critical Bottleneck: The ${worstNpt.SBU} - ${worstNpt.Section || 'General'} section is experiencing extremely high Non-Productive Time (NPT) at ${worstNpt.parsedNPT.toFixed(2)}%. Immediate RCA and maintenance audits are recommended.`);
+            insights.push(`Critical Bottleneck: The ${worstNpt.SBU} - ${worstNpt.Section || 'General'} section is experiencing exceptionally high Non-Productive Time (NPT) at ${worstNpt.parsedNPT.toFixed(2)}%.`);
           }
         }
-        if (totalActual < totalTarget) insights.push(`Production deficit identified: Actual output is ${(totalTarget - totalActual).toLocaleString()} units short of the planned target.`);
+        if (totalActual < totalTarget) {
+          insights.push(`Production deficit identified: Actual output is ${(totalTarget - totalActual).toLocaleString()} units short of the planned target.`);
+        }
+        if (avgMTTR > 20) insights.push(`High Mean Time To Repair (MTTR) observed at ${avgMTTR.toFixed(2)}. Review maintenance responsiveness protocols.`);
         return insights;
-      }, [avgOEE, filteredData, totalActual, totalTarget]);
+      }, [avgOEE, filteredData, totalActual, totalTarget, avgMTTR]);
 
       return (
         <div className="space-y-6">
           <div className="flex bg-slate-100 p-4 rounded-xl items-center space-x-6 overflow-x-auto">
             <FilterIcon className="w-5 h-5 text-slate-500 shrink-0" />
-            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({...filters, sbu: v})} />
-            <FilterSelect label="Month" value={filters.month} options={months} onChange={(v) => setFilters({...filters, month: v})} />
+            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({sbu: v, month: 'All', section: 'All'})} />
+            <FilterSelect label="Month" value={filters.month} options={months} onChange={(v) => setFilters({...filters, month: v, section: 'All'})} />
             <FilterSelect label="Section" value={filters.section} options={sections} onChange={(v) => setFilters({...filters, section: v})} />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <KPICard title="Overall Avg OEE" value={`${avgOEE.toFixed(2)}%`} subtext="Target: 85%" icon={Activity} colorClass={avgOEE >= 85 ? 'bg-green-500' : 'bg-red-500'} />
             <KPICard title="Average NPT" value={`${avgNPT.toFixed(2)}%`} subtext="Non Productive Time" icon={Clock} colorClass="bg-amber-500" />
+            <KPICard title="Avg MTTR" value={avgMTTR.toFixed(2)} subtext="Mean Time To Repair" icon={Wrench} colorClass="bg-orange-500" />
+            <KPICard title="Avg MTBF" value={avgMTBF.toFixed(2)} subtext="Mean Time Between Failures" icon={Activity} colorClass="bg-teal-500" />
+            <KPICard title="Total Shift Capacity" value={totalCap.toLocaleString(undefined, {maximumFractionDigits: 0})} subtext="Planned Availability" icon={Zap} colorClass="bg-purple-500" />
             <KPICard title="Total Target" value={totalTarget.toLocaleString(undefined, {maximumFractionDigits: 0})} icon={Target} colorClass="bg-blue-500" />
-            <KPICard title="Actual Output" value={totalActual.toLocaleString(undefined, {maximumFractionDigits: 0})} icon={Zap} colorClass="bg-indigo-500" />
+            <KPICard title="Actual Output" value={totalActual.toLocaleString(undefined, {maximumFractionDigits: 0})} icon={CheckCircle} colorClass="bg-indigo-500" />
           </div>
 
           <AIInsightCard insights={aiInsights} />
@@ -219,7 +298,7 @@
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={filteredData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
-                    <XAxis dataKey="SBU" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="Month" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
                     <YAxis tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
                     <Tooltip cursor={{fill: '#f1f5f9'}} />
                     <Legend />
@@ -236,7 +315,7 @@
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={filteredData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
-                    <XAxis dataKey="SBU" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="Month" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
                     <YAxis tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} domain={[0, 100]} />
                     <Tooltip cursor={{fill: '#f1f5f9'}} />
                     <Legend />
@@ -261,6 +340,7 @@
                     <th className="px-6 py-4">NPT %</th>
                     <th className="px-6 py-4">Target</th>
                     <th className="px-6 py-4">Actual Output</th>
+                    <th className="px-6 py-4">Shift Cap</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -273,6 +353,7 @@
                       <td className="px-6 py-4">{row.parsedNPT.toFixed(2)}%</td>
                       <td className="px-6 py-4">{row.parsedTarget.toLocaleString()}</td>
                       <td className="px-6 py-4">{row.parsedActual.toLocaleString()}</td>
+                      <td className="px-6 py-4">{row.parsedCap.toLocaleString()}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -288,12 +369,18 @@
       const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
 
       const filteredData = useMemo(() => {
-        return rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => ({
-          ...d,
-          parsedPV: safeNum(d['Planned Value']),
-          parsedEV: safeNum(d['Earned Value']),
-          parsedSPI: safeNum(d.SPI)
-        }));
+        return rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => {
+          // Dynamic keys based on standard export vs user's specific sheet
+          const pvKey = Object.keys(d).find(k => k.toLowerCase().includes('planned')) || 'Sum of Planned';
+          const evKey = Object.keys(d).find(k => k.toLowerCase().includes('earned')) || 'Sum of Earned';
+          
+          return {
+            ...d,
+            parsedPV: safeNum(d[pvKey]),
+            parsedEV: safeNum(d[evKey]),
+            parsedSPI: safeNum(d.SPI)
+          };
+        });
       }, [rawData, filters]);
 
       const totalPV = filteredData.reduce((a, c) => a + c.parsedPV, 0);
@@ -302,7 +389,7 @@
 
       const aiInsights = [];
       if (avgSPI < 1 && filteredData.length > 0) aiInsights.push(`Average Schedule Performance Index (SPI) is ${avgSPI.toFixed(2)}. The portfolio is currently lagging behind schedule.`);
-      if (totalEV < totalPV) aiInsights.push(`Financial discrepancy: Earned Value is trailing Planned Value by BDT ${(totalPV - totalEV).toLocaleString()}. Cost overruns are imminent.`);
+      if (totalEV < totalPV) aiInsights.push(`Financial discrepancy: Earned Value is trailing Planned Value by BDT ${(totalPV - totalEV).toLocaleString()}. Schedule crashing or fast-tracking required.`);
 
       return (
         <div className="space-y-6">
@@ -372,8 +459,9 @@
 
     const SectionCards = ({ rawData, title }) => {
       const [filters, setFilters] = useState({ sbu: 'All', month: 'All' });
+      
       const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
-      const months = [...new Set(rawData.map(d => d.Month || d['Created Month']))].filter(Boolean);
+      const months = [...new Set(rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => d.Month || d['Created Month']))].filter(Boolean);
 
       const filteredData = useMemo(() => {
         return rawData.filter(d => {
@@ -409,7 +497,7 @@
         <div className="space-y-6">
           <div className="flex bg-slate-100 p-4 rounded-xl items-center space-x-6 overflow-x-auto">
             <FilterIcon className="w-5 h-5 text-slate-500 shrink-0" />
-            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({...filters, sbu: v})} />
+            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({sbu: v, month: 'All'})} />
             <FilterSelect label="Month" value={filters.month} options={months} onChange={(v) => setFilters({...filters, month: v})} />
           </div>
 
@@ -478,28 +566,30 @@
     };
 
     const SectionMOH = ({ rawData }) => {
-      const [filters, setFilters] = useState({ sbu: 'All', category: 'All' });
+      const [filters, setFilters] = useState({ sbu: 'All', month: 'All', category: 'All' });
+      
       const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
-      const categories = [...new Set(rawData.map(d => d.Category))].filter(Boolean);
+      const months = [...new Set(rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => d.Month))].filter(Boolean);
+      const categories = [...new Set(rawData.filter(d => 
+        (filters.sbu === 'All' || d.SBU === filters.sbu) &&
+        (filters.month === 'All' || d.Month === filters.month)
+      ).map(d => d.Category))].filter(Boolean);
 
       const filteredData = useMemo(() => {
         return rawData.filter(d => 
           (filters.sbu === 'All' || d.SBU === filters.sbu) &&
+          (filters.month === 'All' || d.Month === filters.month) &&
           (filters.category === 'All' || d.Category === filters.category)
-        ).map(d => ({
-          ...d,
-          parsedCost: safeNum(d['MOH Cost']),
-          parsedCPU: safeNum(d['Cost per Unit'])
-        }));
+        );
       }, [rawData, filters]);
 
-      const totalCost = filteredData.reduce((a, c) => a + c.parsedCost, 0);
-      const avgCpu = filteredData.length ? (filteredData.reduce((a, c) => a + c.parsedCPU, 0) / filteredData.length) : 0;
+      const totalCost = filteredData.reduce((a, c) => a + c['MOH Cost'], 0);
+      const avgCpu = filteredData.length ? (filteredData.reduce((a, c) => a + c['Cost per Unit'], 0) / filteredData.length) : 0;
 
       const chartDataMap = {};
       filteredData.forEach(d => {
         if (!chartDataMap[d.Category]) chartDataMap[d.Category] = { name: d.Category, cost: 0 };
-        chartDataMap[d.Category].cost += d.parsedCost;
+        chartDataMap[d.Category].cost += d['MOH Cost'];
       });
       const chartData = Object.values(chartDataMap).sort((a,b) => b.cost - a.cost);
 
@@ -511,7 +601,8 @@
         <div className="space-y-6">
           <div className="flex bg-slate-100 p-4 rounded-xl items-center space-x-6 overflow-x-auto">
             <FilterIcon className="w-5 h-5 text-slate-500 shrink-0" />
-            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({...filters, sbu: v})} />
+            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({sbu: v, month: 'All', category: 'All'})} />
+            <FilterSelect label="Month" value={filters.month} options={months} onChange={(v) => setFilters({...filters, month: v, category: 'All'})} />
             <FilterSelect label="Category" value={filters.category} options={categories} onChange={(v) => setFilters({...filters, category: v})} />
           </div>
 
@@ -538,14 +629,14 @@
           </div>
           
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-5 border-b border-slate-100"><h3 className="text-lg font-bold text-slate-800">MOH Cost Situations per SBU</h3></div>
+            <div className="p-5 border-b border-slate-100"><h3 className="text-lg font-bold text-slate-800">MOH Cost Situations</h3></div>
             <div className="overflow-x-auto max-h-96">
               <table className="w-full text-sm text-left text-slate-600">
                 <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
                   <tr>
                     <th className="px-6 py-4">SBU</th>
-                    <th className="px-6 py-4">Category</th>
                     <th className="px-6 py-4">Month</th>
+                    <th className="px-6 py-4">Category</th>
                     <th className="px-6 py-4 text-right">MOH Cost (BDT)</th>
                     <th className="px-6 py-4 text-right">Cost per Unit</th>
                   </tr>
@@ -554,10 +645,10 @@
                   {filteredData.map((row, idx) => (
                     <tr key={idx} className="bg-white border-b border-slate-50 hover:bg-slate-50">
                       <td className="px-6 py-4 font-bold text-slate-800">{row.SBU}</td>
-                      <td className="px-6 py-4 font-medium">{row.Category}</td>
                       <td className="px-6 py-4">{row.Month}</td>
-                      <td className="px-6 py-4 text-right font-mono">{row.parsedCost.toLocaleString()}</td>
-                      <td className="px-6 py-4 text-right font-mono">{row.parsedCPU.toFixed(2)}</td>
+                      <td className="px-6 py-4 font-medium">{row.Category}</td>
+                      <td className="px-6 py-4 text-right font-mono">{row['MOH Cost'].toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right font-mono">{row['Cost per Unit'].toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -588,21 +679,20 @@
 
             const texts = await Promise.all(responses.map(res => res.text()));
 
-            // Validate that we didn't receive HTML (which happens if the Google Sheet is private)
             if (texts[0].trim().startsWith('<')) {
-              throw new Error("Received HTML instead of CSV. Please check that your Google Sheet sharing is set to 'Anyone with the link can view'.");
+              throw new Error("Received HTML login page. Ensure Google Sheet sharing is set to 'Anyone with the link'.");
             }
 
             setData({
-              oee: parseCSV(texts[0]),
-              raci: parseCSV(texts[1]),
-              ic: parseCSV(texts[2]),
-              pc: parseCSV(texts[3]),
-              moh: parseCSV(texts[4])
+              oee: parseSmartCSV(texts[0]),
+              raci: parseSmartCSV(texts[1]),
+              ic: parseSmartCSV(texts[2]),
+              pc: parseSmartCSV(texts[3]),
+              moh: parseMOHCSV(texts[4])
             });
             setLoading(false);
           } catch (err) {
-            console.error("Live fetch error:", err);
+            console.error("Fetch error:", err);
             setError(err.message || "Failed to load live data.");
             setLoading(false);
           }
@@ -635,7 +725,6 @@
               <ShieldAlert className="w-16 h-16 text-red-500 mx-auto mb-4" />
               <h2 className="text-2xl font-bold text-red-700 mb-2">Connection Error</h2>
               <p className="text-red-600 font-medium mb-4">{error}</p>
-              <p className="text-sm text-red-500">Ensure the Google Sheet is public: <br/><strong>Share -> General Access -> Anyone with the link.</strong></p>
             </div>
           </div>
         );
