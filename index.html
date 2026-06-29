@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DCOO Master Dashboard</title>
+  
+  <!-- CDNs for React, ReactDOM, Babel, Tailwind, and Recharts -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+  <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo, useEffect } = React;
+    const { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } = window.Recharts;
+
+    // --- ICON COMPONENTS (Replaced Lucide with Inline SVGs for Standalone HTML) ---
+    const Icon = ({ path, className }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        <path d={path} />
+      </svg>
+    );
+    const Activity = (p) => <Icon {...p} path="M22 12h-4l-3 9L9 3l-3 9H2"/>;
+    const Clock = (p) => <Icon {...p} path="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 6v6l4 2"/>;
+    const Target = (p) => <Icon {...p} path="M22 12c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2s10 4.477 10 10zM12 16a4 4 0 100-8 4 4 0 000 8zM12 13a1 1 0 100-2 1 1 0 000 2z"/>;
+    const Zap = (p) => <Icon {...p} path="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>;
+    const TrendingUp = (p) => <Icon {...p} path="M23 6l-9.5 9.5-5-5L1 18M17 6h6v6"/>;
+    const TrendingDown = (p) => <Icon {...p} path="M23 18l-9.5-9.5-5 5L1 6M17 18h6v-6"/>;
+    const CheckCircle = (p) => <Icon {...p} path="M22 11.08V12a10 10 0 11-5.93-9.14M22 4L12 14.01l-3-3"/>;
+    const FileText = (p) => <Icon {...p} path="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6M16 13H8M16 17H8M10 9H8"/>;
+    const ShieldAlert = (p) => <Icon {...p} path="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10zM12 8v4M12 16h.01"/>;
+    const Sparkles = (p) => <Icon {...p} path="M12 3v3M12 18v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M3 12h3M18 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12M9 12a3 3 0 106 0 3 3 0 00-6 0z"/>;
+    const FilterIcon = (p) => <Icon {...p} path="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/>;
+    const LayoutDashboard = (p) => <Icon {...p} path="M3 3h7v9H3zM14 3h7v5h-7zM14 12h7v9h-7zM3 16h7v5H3z"/>;
+
+    // --- GOOGLE SHEETS LIVE DATA CONFIG ---
+    const SHEET_ID = '17xgLNSWgPaPa-WR6MpPa5dcvQUoUaQKqlT6OyVCoJ4U';
+    
+    // Returns the CSV export URL for a specific sheet tab
+    const getSheetUrl = (sheetName) => 
+      `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+
+    // --- ROBUST CSV PARSER ---
+    const parseCSV = (csvStr) => {
+      if (!csvStr) return [];
+      const lines = csvStr.trim().split('\n').filter(line => line.trim() !== '');
+      if (lines.length === 0) return [];
+      
+      const headers = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim());
+      return lines.slice(1).map(line => {
+        // Splitting by comma but ignoring commas inside double quotes
+        const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+        const obj = {};
+        headers.forEach((h, i) => {
+          let val = values[i] || '';
+          val = val.replace(/^"|"$/g, '').trim();
+          obj[h] = val;
+        });
+        return obj;
+      });
+    };
+
+    const safeNum = (val) => {
+      if (!val || val === '#DIV/0!' || val === '#REF!' || val === '#N/A') return 0;
+      const num = parseFloat(val.toString().replace(/,/g, ''));
+      return isNaN(num) ? 0 : num;
+    };
+
+    const formatPercent = (val) => {
+      if (typeof val === 'string' && val.includes('%')) {
+         return parseFloat(val.replace('%', ''));
+      }
+      const num = parseFloat(val);
+      if (num < 1 && num > 0) return num * 100;
+      return isNaN(num) ? 0 : num;
+    };
+
+    // --- SHARED COMPONENTS ---
+    const KPICard = ({ title, value, subtext, icon: IconComponent, colorClass }) => (
+      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center space-x-4 transition-all hover:shadow-md">
+        <div className={`p-4 rounded-xl ${colorClass}`}>
+          <IconComponent className="w-6 h-6 text-white" />
+        </div>
+        <div>
+          <p className="text-sm text-slate-500 font-semibold mb-1">{title}</p>
+          <h3 className="text-2xl font-black text-slate-800 tracking-tight">{value}</h3>
+          {subtext && <p className="text-xs text-slate-400 mt-1 font-medium">{subtext}</p>}
+        </div>
+      </div>
+    );
+
+    const AIInsightCard = ({ insights }) => (
+      <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100 rounded-2xl p-6 mb-6 shadow-sm">
+        <div className="flex items-center space-x-2 mb-4">
+          <Sparkles className="w-5 h-5 text-indigo-600" />
+          <h3 className="font-bold text-indigo-900 text-lg">AI Analysis & Smart Suggestions</h3>
+        </div>
+        <ul className="space-y-3">
+          {insights.map((insight, idx) => (
+            <li key={idx} className="text-sm text-indigo-800 flex items-start leading-relaxed">
+              <span className="mr-3 text-indigo-400 mt-0.5">●</span>
+              {insight}
+            </li>
+          ))}
+          {insights.length === 0 && <li className="text-sm text-indigo-800">No critical anomalies detected in the current view.</li>}
+        </ul>
+      </div>
+    );
+
+    const FilterSelect = ({ label, value, options, onChange }) => (
+      <div className="flex flex-col min-w-[150px]">
+        <label className="text-xs font-semibold text-slate-500 mb-1 ml-1">{label}</label>
+        <select 
+          className="bg-white border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2 shadow-sm"
+          value={value} 
+          onChange={(e) => onChange(e.target.value)}
+        >
+          <option value="All">All {label}s</option>
+          {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+      </div>
+    );
+
+    const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+
+    // --- SECTION 1: SBU WISE OEE ---
+    const SectionOEE = ({ rawData }) => {
+      const [filters, setFilters] = useState({ sbu: 'All', month: 'All', section: 'All' });
+
+      const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
+      const months = [...new Set(rawData.map(d => d.Month))].filter(Boolean);
+      const sections = [...new Set(rawData.map(d => d.Section))].filter(Boolean);
+
+      const filteredData = useMemo(() => {
+        return rawData.filter(d => {
+          return (filters.sbu === 'All' || d.SBU === filters.sbu) &&
+                 (filters.month === 'All' || d.Month === filters.month) &&
+                 (filters.section === 'All' || d.Section === filters.section);
+        }).map(d => ({
+          ...d,
+          parsedOEE: formatPercent(d.OEE),
+          parsedNPT: formatPercent(d['NPT %']),
+          parsedMTTR: safeNum(d.MTTR),
+          parsedMTBF: safeNum(d.MTBF),
+          parsedTarget: safeNum(d.Target),
+          parsedActual: safeNum(d['Actual Output']),
+          parsedCap: safeNum(d['Shift Capacity'])
+        }));
+      }, [rawData, filters]);
+
+      const avgOEE = filteredData.length ? (filteredData.reduce((acc, curr) => acc + curr.parsedOEE, 0) / filteredData.length) : 0;
+      const avgNPT = filteredData.length ? (filteredData.reduce((acc, curr) => acc + curr.parsedNPT, 0) / filteredData.length) : 0;
+      const totalTarget = filteredData.reduce((acc, curr) => acc + curr.parsedTarget, 0);
+      const totalActual = filteredData.reduce((acc, curr) => acc + curr.parsedActual, 0);
+
+      const aiInsights = useMemo(() => {
+        const insights = [];
+        if (avgOEE < 85 && filteredData.length > 0) {
+          insights.push(`The Overall Average OEE is currently ${avgOEE.toFixed(2)}%, falling below the critical 85% corporate target.`);
+          const worstNpt = [...filteredData].sort((a, b) => b.parsedNPT - a.parsedNPT)[0];
+          if (worstNpt && worstNpt.parsedNPT > 20) {
+            insights.push(`Critical Bottleneck: The ${worstNpt.SBU} - ${worstNpt.Section || 'General'} section is experiencing extremely high Non-Productive Time (NPT) at ${worstNpt.parsedNPT.toFixed(2)}%. Immediate RCA and maintenance audits are recommended.`);
+          }
+        } else if (filteredData.length > 0) {
+          insights.push(`Excellent performance! The Overall OEE is ${avgOEE.toFixed(2)}%, successfully surpassing the 85% target threshold.`);
+        }
+        if (totalActual < totalTarget) {
+          insights.push(`Production deficit identified: Actual output is ${(totalTarget - totalActual).toLocaleString()} units short of the planned target. Re-evaluate shift capacities and raw material availability.`);
+        }
+        return insights;
+      }, [avgOEE, filteredData, totalActual, totalTarget]);
+
+      return (
+        <div className="space-y-6">
+          <div className="flex bg-slate-100 p-4 rounded-xl border border-slate-200 items-center space-x-6 overflow-x-auto">
+            <FilterIcon className="w-5 h-5 text-slate-500 shrink-0" />
+            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({...filters, sbu: v})} />
+            <FilterSelect label="Month" value={filters.month} options={months} onChange={(v) => setFilters({...filters, month: v})} />
+            <FilterSelect label="Section" value={filters.section} options={sections} onChange={(v) => setFilters({...filters, section: v})} />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <KPICard title="Overall Avg OEE" value={`${avgOEE.toFixed(2)}%`} subtext="Target: 85%" icon={Activity} colorClass={avgOEE >= 85 ? 'bg-green-500' : 'bg-red-500'} />
+            <KPICard title="Average NPT" value={`${avgNPT.toFixed(2)}%`} subtext="Non Productive Time" icon={Clock} colorClass="bg-amber-500" />
+            <KPICard title="Total Target" value={totalTarget.toLocaleString(undefined, {maximumFractionDigits: 0})} subtext="Planned Output" icon={Target} colorClass="bg-blue-500" />
+            <KPICard title="Actual Output" value={totalActual.toLocaleString(undefined, {maximumFractionDigits: 0})} subtext="Achieved Volume" icon={Zap} colorClass="bg-indigo-500" />
+          </div>
+
+          <AIInsightCard insights={aiInsights} />
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center"><TrendingUp className="w-5 h-5 mr-2 text-blue-500"/> Target vs Actual Output</h3>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={filteredData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                    <XAxis dataKey="SBU" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
+                    <YAxis tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
+                    <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: '8px', border: 'none'}} />
+                    <Legend />
+                    <Bar dataKey="parsedTarget" name="Target Output" fill="#94a3b8" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="parsedActual" name="Actual Output" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center"><Activity className="w-5 h-5 mr-2 text-indigo-500"/> OEE vs Target (85%)</h3>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={filteredData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                    <XAxis dataKey="SBU" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
+                    <YAxis tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} domain={[0, 100]} />
+                    <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: '8px', border: 'none'}} />
+                    <Legend />
+                    <Line type="monotone" dataKey="parsedOEE" name="Actual OEE %" stroke="#6366f1" strokeWidth={3} dot={{r: 4, fill: '#6366f1'}} />
+                    <Line type="monotone" dataKey={() => 85} name="Target 85%" stroke="#ef4444" strokeDasharray="5 5" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-5 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800">Overall OEE Situation Log</h3>
+            </div>
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-sm text-left text-slate-600">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                  <tr>
+                    <th className="px-6 py-4">SBU</th>
+                    <th className="px-6 py-4">Section</th>
+                    <th className="px-6 py-4">Month</th>
+                    <th className="px-6 py-4">OEE %</th>
+                    <th className="px-6 py-4">NPT %</th>
+                    <th className="px-6 py-4">Target</th>
+                    <th className="px-6 py-4">Actual Output</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredData.map((row, idx) => (
+                    <tr key={idx} className="bg-white border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 font-semibold text-slate-800">{row.SBU}</td>
+                      <td className="px-6 py-4">{row.Section}</td>
+                      <td className="px-6 py-4">{row.Month}</td>
+                      <td className={`px-6 py-4 font-bold ${row.parsedOEE >= 85 ? 'text-green-600' : 'text-red-600'}`}>{row.parsedOEE.toFixed(2)}%</td>
+                      <td className="px-6 py-4">{row.parsedNPT.toFixed(2)}%</td>
+                      <td className="px-6 py-4">{row.parsedTarget.toLocaleString()}</td>
+                      <td className="px-6 py-4">{row.parsedActual.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // --- SECTION 2: RACI IMPORT ---
+    const SectionRACI = ({ rawData }) => {
+      const [filters, setFilters] = useState({ sbu: 'All' });
+      const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
+
+      const filteredData = useMemo(() => {
+        return rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => ({
+          ...d,
+          parsedPV: safeNum(d['Planned Value']),
+          parsedEV: safeNum(d['Earned Value']),
+          parsedVariance: safeNum(d.Variance),
+          parsedSPI: safeNum(d.SPI)
+        }));
+      }, [rawData, filters]);
+
+      const totalPV = filteredData.reduce((a, c) => a + c.parsedPV, 0);
+      const totalEV = filteredData.reduce((a, c) => a + c.parsedEV, 0);
+      const avgSPI = filteredData.length ? (filteredData.reduce((a, c) => a + c.parsedSPI, 0) / filteredData.length) : 0;
+      const delayedProjects = filteredData.filter(d => d.parsedSPI < 1).length;
+
+      const aiInsights = [];
+      if (avgSPI < 1 && filteredData.length > 0) aiInsights.push(`Average Schedule Performance Index (SPI) is ${avgSPI.toFixed(2)}. The portfolio is currently lagging behind schedule.`);
+      if (delayedProjects > 0) aiInsights.push(`${delayedProjects} project(s) are actively delayed (SPI < 1.0). Immediate resource re-allocation and vendor expediting is suggested to close the variance gaps.`);
+      if (totalEV < totalPV) aiInsights.push(`Financial discrepancy: Earned Value is trailing Planned Value by BDT ${(totalPV - totalEV).toLocaleString()}. Cost overruns are imminent if schedules are not crashed.`);
+
+      return (
+        <div className="space-y-6">
+          <div className="flex bg-slate-100 p-4 rounded-xl border border-slate-200 items-center space-x-6 overflow-x-auto">
+            <FilterIcon className="w-5 h-5 text-slate-500 shrink-0" />
+            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({sbu: v})} />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <KPICard title="Active Projects" value={filteredData.length} icon={FileText} colorClass="bg-slate-700" />
+            <KPICard title="Avg SPI" value={avgSPI.toFixed(2)} subtext="< 1.0 indicates delay" icon={TrendingDown} colorClass={avgSPI >= 1 ? 'bg-emerald-500' : 'bg-rose-500'} />
+            <KPICard title="Total Planned Value" value={`৳${totalPV.toLocaleString(undefined, {notation: "compact", compactDisplay: "short"})}`} subtext="Budgeted cost of work scheduled" icon={Target} colorClass="bg-sky-500" />
+            <KPICard title="Total Earned Value" value={`৳${totalEV.toLocaleString(undefined, {notation: "compact", compactDisplay: "short"})}`} subtext="Budgeted cost of work performed" icon={CheckCircle} colorClass="bg-indigo-500" />
+          </div>
+
+          <AIInsightCard insights={aiInsights} />
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center"><TrendingUp className="w-5 h-5 mr-2 text-sky-500"/> Planned vs Earned Value by Project</h3>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={filteredData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0"/>
+                  <XAxis dataKey="Project Name" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} tickFormatter={(t) => (t||'').substring(0, 10)+'...'} />
+                  <YAxis tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
+                  <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: '8px', border: 'none'}} />
+                  <Legend />
+                  <Area type="monotone" dataKey="parsedPV" name="Planned Value" stroke="#94a3b8" fillOpacity={0.3} fill="#94a3b8" />
+                  <Area type="monotone" dataKey="parsedEV" name="Earned Value" stroke="#3b82f6" fillOpacity={0.3} fill="#3b82f6" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-5 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800">Project Action Plans & Scenarios</h3>
+            </div>
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-sm text-left text-slate-600">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                  <tr>
+                    <th className="px-6 py-4">SBU</th>
+                    <th className="px-6 py-4">Project Name</th>
+                    <th className="px-6 py-4">Planned Value</th>
+                    <th className="px-6 py-4">Earned Value</th>
+                    <th className="px-6 py-4">SPI</th>
+                    <th className="px-6 py-4">Action Plan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredData.map((row, idx) => (
+                    <tr key={idx} className="bg-white border-b border-slate-50 hover:bg-slate-50">
+                      <td className="px-6 py-4 font-semibold text-slate-800">{row.SBU}</td>
+                      <td className="px-6 py-4 font-medium">{row['Project Name']}</td>
+                      <td className="px-6 py-4">{row.parsedPV.toLocaleString()}</td>
+                      <td className="px-6 py-4">{row.parsedEV.toLocaleString()}</td>
+                      <td className={`px-6 py-4 font-bold ${row.parsedSPI >= 1 ? 'text-emerald-600' : 'text-rose-600'}`}>{row.parsedSPI.toFixed(2)}</td>
+                      <td className="px-6 py-4 max-w-xs truncate" title={row['Action Plan']}>{row['Action Plan']}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // --- SECTION 3 & 4: IC & PC CARDS ---
+    const SectionCards = ({ rawData, title }) => {
+      const [filters, setFilters] = useState({ sbu: 'All', month: 'All' });
+      const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
+      const months = [...new Set(rawData.map(d => d.Month || d['Created Month']))].filter(Boolean);
+
+      const filteredData = useMemo(() => {
+        return rawData.filter(d => {
+          const dMonth = d.Month || d['Created Month'];
+          return (filters.sbu === 'All' || d.SBU === filters.sbu) &&
+                 (filters.month === 'All' || dMonth === filters.month);
+        });
+      }, [rawData, filters]);
+
+      const completed = filteredData.filter(d => d.Status === 'Completed').length;
+      const rejected = filteredData.filter(d => d.Status === 'Rejected').length;
+      const ongoing = filteredData.filter(d => d.Status === 'Ongoing').length;
+      const initiated = filteredData.filter(d => d.Status === 'Initiated').length;
+      const total = filteredData.length;
+
+      const pieData = [
+        { name: 'Completed', value: completed },
+        { name: 'Rejected', value: rejected },
+        { name: 'Ongoing', value: ongoing },
+        { name: 'Initiated', value: initiated }
+      ].filter(d => d.value > 0);
+
+      const PIE_COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6'];
+
+      const aiInsights = [];
+      if (total > 0) {
+        const rejectRate = (rejected / total) * 100;
+        if (rejectRate > 15) aiInsights.push(`High rejection anomaly detected: ${rejectRate.toFixed(1)}% of cards are being rejected. Immediate quality assurance review is advised at the origin phase.`);
+        if (ongoing > completed) aiInsights.push(`High WIP (Work in Progress): Ongoing items currently outnumber completed items. Bottlenecks in processing workflows are likely.`);
+        if (rejectRate <= 15 && ongoing <= completed) aiInsights.push(`Throughput is stable with a healthy completion ratio and acceptable rejection rates.`);
+      }
+
+      return (
+        <div className="space-y-6">
+          <div className="flex bg-slate-100 p-4 rounded-xl border border-slate-200 items-center space-x-6 overflow-x-auto">
+            <FilterIcon className="w-5 h-5 text-slate-500 shrink-0" />
+            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({...filters, sbu: v})} />
+            <FilterSelect label="Month" value={filters.month} options={months} onChange={(v) => setFilters({...filters, month: v})} />
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+            <KPICard title="Total Cards" value={total} icon={FileText} colorClass="bg-slate-600" />
+            <KPICard title="Completed" value={completed} icon={CheckCircle} colorClass="bg-emerald-500" />
+            <KPICard title="Rejected" value={rejected} icon={ShieldAlert} colorClass="bg-rose-500" />
+            <KPICard title="Ongoing" value={ongoing} icon={Activity} colorClass="bg-amber-500" />
+            <KPICard title="Initiated" value={initiated} icon={Zap} colorClass="bg-sky-500" />
+          </div>
+
+          <AIInsightCard insights={aiInsights} />
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800 mb-2">Status Distribution</h3>
+              <div className="h-64">
+                {pieData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip contentStyle={{borderRadius: '8px', border: 'none'}} />
+                      <Legend verticalAlign="bottom" height={36}/>
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-full items-center justify-center text-slate-400">No data available</div>
+                )}
+              </div>
+            </div>
+
+            <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+                <h3 className="text-lg font-bold text-slate-800">Latest {title} Situations</h3>
+                <span className="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-full font-semibold">Live Data</span>
+              </div>
+              <div className="overflow-y-auto h-72">
+                <table className="w-full text-sm text-left text-slate-600">
+                  <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="px-6 py-3">Card No.</th>
+                      <th className="px-6 py-3">SBU</th>
+                      <th className="px-6 py-3">Section</th>
+                      <th className="px-6 py-3">Status</th>
+                      <th className="px-6 py-3">Month</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredData.map((row, idx) => (
+                      <tr key={idx} className="bg-white border-b border-slate-50 hover:bg-slate-50">
+                        <td className="px-6 py-3 font-medium text-slate-800">{row['Card No.'] || row['Card No']}</td>
+                        <td className="px-6 py-3">{row.SBU}</td>
+                        <td className="px-6 py-3">{row.Section}</td>
+                        <td className="px-6 py-3">
+                          <span className={`px-2 py-1 rounded-md text-xs font-bold ${
+                            row.Status === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                            row.Status === 'Rejected' ? 'bg-rose-100 text-rose-700' :
+                            row.Status === 'Ongoing' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
+                          }`}>
+                            {row.Status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3 text-slate-400">{row.Month || row['Created Month']}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // --- SECTION 5: MOH COST ---
+    const SectionMOH = ({ rawData }) => {
+      const [filters, setFilters] = useState({ sbu: 'All', category: 'All' });
+      
+      const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
+      const categories = [...new Set(rawData.map(d => d.Category))].filter(Boolean);
+
+      const filteredData = useMemo(() => {
+        return rawData.filter(d => 
+          (filters.sbu === 'All' || d.SBU === filters.sbu) &&
+          (filters.category === 'All' || d.Category === filters.category)
+        ).map(d => ({
+          ...d,
+          parsedCost: safeNum(d['MOH Cost']),
+          parsedCPU: safeNum(d['Cost per Unit'])
+        }));
+      }, [rawData, filters]);
+
+      const totalCost = filteredData.reduce((a, c) => a + c.parsedCost, 0);
+      const avgCpu = filteredData.length ? (filteredData.reduce((a, c) => a + c.parsedCPU, 0) / filteredData.length) : 0;
+
+      const chartDataMap = {};
+      filteredData.forEach(d => {
+        if (!chartDataMap[d.Category]) chartDataMap[d.Category] = { name: d.Category, cost: 0 };
+        chartDataMap[d.Category].cost += d.parsedCost;
+      });
+      const chartData = Object.values(chartDataMap).sort((a,b) => b.cost - a.cost);
+
+      const aiInsights = [];
+      if (chartData.length > 0) {
+        aiInsights.push(`The top expenditure category is "${chartData[0].name}" accounting for BDT ${chartData[0].cost.toLocaleString()}. Cost-saving strategies should be primarily focused here.`);
+      }
+      if (avgCpu > 100) {
+        aiInsights.push(`Average cost per unit is significantly high (${avgCpu.toFixed(2)}). Investigate division of overheads and production volume scales to optimize unit economics.`);
+      }
+
+      return (
+        <div className="space-y-6">
+          <div className="flex bg-slate-100 p-4 rounded-xl border border-slate-200 items-center space-x-6 overflow-x-auto">
+            <FilterIcon className="w-5 h-5 text-slate-500 shrink-0" />
+            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({...filters, sbu: v})} />
+            <FilterSelect label="Category" value={filters.category} options={categories} onChange={(v) => setFilters({...filters, category: v})} />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <KPICard title="Total MOH Cost" value={`৳${totalCost.toLocaleString()}`} icon={Zap} colorClass="bg-violet-600" />
+            <KPICard title="Avg Cost Per Unit" value={`৳${avgCpu.toFixed(2)}`} icon={Activity} colorClass="bg-fuchsia-500" />
+          </div>
+
+          <AIInsightCard insights={aiInsights} />
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center"><TrendingUp className="w-5 h-5 mr-2 text-violet-500"/> Cost Breakdown by Category</h3>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} layout="vertical" margin={{ left: 100 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0"/>
+                  <XAxis type="number" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} />
+                  <YAxis dataKey="name" type="category" tick={{fill: '#64748b', fontSize: 12}} axisLine={false} tickLine={false} width={150} />
+                  <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{borderRadius: '8px', border: 'none'}} />
+                  <Bar dataKey="cost" name="MOH Cost (BDT)" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-5 border-b border-slate-100">
+              <h3 className="text-lg font-bold text-slate-800">MOH Cost Situations per SBU</h3>
+            </div>
+            <div className="overflow-x-auto max-h-96">
+              <table className="w-full text-sm text-left text-slate-600">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                  <tr>
+                    <th className="px-6 py-4">SBU</th>
+                    <th className="px-6 py-4">Category</th>
+                    <th className="px-6 py-4">Month</th>
+                    <th className="px-6 py-4 text-right">MOH Cost (BDT)</th>
+                    <th className="px-6 py-4 text-right">Cost per Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredData.map((row, idx) => (
+                    <tr key={idx} className="bg-white border-b border-slate-50 hover:bg-slate-50">
+                      <td className="px-6 py-4 font-bold text-slate-800">{row.SBU}</td>
+                      <td className="px-6 py-4 font-medium">{row.Category}</td>
+                      <td className="px-6 py-4">{row.Month}</td>
+                      <td className="px-6 py-4 text-right font-mono">{row.parsedCost.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right font-mono">{row.parsedCPU.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // --- MAIN APP (Handles Live Fetching) ---
+    const App = () => {
+      const [activeTab, setActiveTab] = useState('OEE');
+      const [data, setData] = useState({ oee: [], raci: [], ic: [], pc: [], moh: [] });
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        // Fetch Live Data from Google Sheets
+        const fetchData = async () => {
+          try {
+            const [oeeRes, raciRes, icRes, pcRes, mohRes] = await Promise.all([
+              fetch(getSheetUrl('SBU Wise OEE')),
+              fetch(getSheetUrl('RACI Import')),
+              fetch(getSheetUrl('IC')),
+              fetch(getSheetUrl('PC')),
+              fetch(getSheetUrl('MOH Cost'))
+            ]);
+
+            const [oeeText, raciText, icText, pcText, mohText] = await Promise.all([
+              oeeRes.text(), raciRes.text(), icRes.text(), pcRes.text(), mohRes.text()
+            ]);
+
+            setData({
+              oee: parseCSV(oeeText),
+              raci: parseCSV(raciText),
+              ic: parseCSV(icText),
+              pc: parseCSV(pcText),
+              moh: parseCSV(mohText)
+            });
+            setLoading(false);
+          } catch (err) {
+            console.error("Failed to fetch Google Sheets data:", err);
+            setError("Failed to load live data. Ensure your Google Sheet is shared as 'Anyone with the link can view'.");
+            setLoading(false);
+          }
+        };
+        fetchData();
+      }, []);
+
+      const TABS = [
+        { id: 'OEE', label: 'SBU Wise OEE' },
+        { id: 'RACI', label: 'RACI Import' },
+        { id: 'IC', label: 'IC Cards' },
+        { id: 'PC', label: 'PC Cards' },
+        { id: 'MOH', label: 'MOH Cost' },
+        { id: 'Breakdown', label: 'Breakdown Analysis' }
+      ];
+
+      if (loading) {
+        return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+            <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <p className="mt-4 text-slate-500 font-semibold animate-pulse">Connecting to Live Google Sheets...</p>
+          </div>
+        );
+      }
+
+      if (error) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-slate-50">
+            <div className="bg-red-50 p-6 rounded-xl border border-red-200 max-w-md text-center">
+              <ShieldAlert className="w-12 h-12 text-red-500 mx-auto mb-4" />
+              <h2 className="text-xl font-bold text-red-700 mb-2">Connection Error</h2>
+              <p className="text-red-600">{error}</p>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen pb-12">
+          <header className="bg-white border-b border-slate-200 px-8 py-5 shadow-sm sticky top-0 z-50">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-center space-x-3">
+                <div className="bg-blue-600 p-2 rounded-lg">
+                  <LayoutDashboard className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-black text-slate-800 tracking-tight">DCOO Executive Dashboard</h1>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-0.5 flex items-center">
+                    <span className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
+                    Live Data Connected
+                  </p>
+                </div>
+              </div>
+              <div className="flex space-x-1 bg-slate-100 p-1 rounded-xl overflow-x-auto">
+                {TABS.map(tab => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`px-4 py-2.5 rounded-lg text-sm font-bold whitespace-nowrap transition-all duration-200 ease-out ${
+                      activeTab === tab.id 
+                        ? 'bg-white text-blue-700 shadow-sm ring-1 ring-slate-200/50' 
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </header>
+
+          <main className="max-w-screen-2xl mx-auto px-4 lg:px-8 pt-8">
+            {activeTab === 'OEE' && <SectionOEE rawData={data.oee} />}
+            {activeTab === 'RACI' && <SectionRACI rawData={data.raci} />}
+            {activeTab === 'IC' && <SectionCards rawData={data.ic} title="IC Card" />}
+            {activeTab === 'PC' && <SectionCards rawData={data.pc} title="PC Card" />}
+            {activeTab === 'MOH' && <SectionMOH rawData={data.moh} />}
+            {activeTab === 'Breakdown' && (
+              <div className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                 <div className="p-4 bg-slate-50 border-b border-slate-100">
+                    <h3 className="font-bold text-slate-700">SBU Wise Breakdown Analysis Interface</h3>
+                 </div>
+                 <iframe 
+                   src="https://ratul-17.github.io/Breakdown" 
+                   className="w-full h-[800px] border-0" 
+                   title="SBU Breakdown Analysis"
+                 />
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
