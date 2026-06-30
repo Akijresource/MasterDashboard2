@@ -86,8 +86,8 @@
       // Auto-detect header row (searches first 10 rows for known headers)
       let headerIdx = 0; 
       for (let i = 0; i < Math.min(lines.length, 10); i++) {
-        const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
-        if (cols.includes('SBU') || cols.includes('Project Name') || cols.some(c => c.includes('Card No'))) {
+        const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim().toUpperCase());
+        if (cols.some(c => c.includes('SBU') || c.includes('PROJECT') || c.includes('CARD') || c.includes('OEE') || c.includes('MONTH'))) {
           headerIdx = i;
           break;
         }
@@ -101,14 +101,27 @@
         if (values.join('').trim() === '') continue; // Skip totally blank lines
         
         const obj = {};
+        let hasData = false;
         headers.forEach((h, idx) => {
           if (h) {
-            obj[h] = (values[idx] || '').replace(/^"|"$/g, '').trim();
+            const val = (values[idx] || '').replace(/^"|"$/g, '').trim();
+            obj[h] = val;
+            if (val) hasData = true;
           }
         });
         
-        // Only keep rows that have actual core data mapped
-        if (obj['SBU'] || obj['Project Name'] || obj['Card No'] || obj['Card No.']) {
+        // Standardize Keys for consistent filtering (handles variations in dataset headers)
+        const kSbu = Object.keys(obj).find(k => k.toUpperCase().includes('SBU'));
+        if (kSbu && !obj['SBU']) obj['SBU'] = obj[kSbu];
+
+        const kMonth = Object.keys(obj).find(k => k.toUpperCase().includes('MONTH'));
+        if (kMonth && !obj['Month']) obj['Month'] = obj[kMonth];
+
+        const kSec = Object.keys(obj).find(k => k.toUpperCase() === 'SECTION' || k.toUpperCase() === 'DEPARTMENT');
+        if (kSec && !obj['Section']) obj['Section'] = obj[kSec];
+        
+        // Push rows that successfully extracted at least some valid data
+        if (hasData) {
           data.push(obj);
         }
       }
@@ -243,20 +256,24 @@
           (filters.month === 'All' || d.Month === filters.month) &&
           (filters.section === 'All' || d.Section === filters.section)
         ).map(d => {
-          // Dynamic Header mapping for stability
-          const targetKey = Object.keys(d).find(k => k.toLowerCase().includes('target')) || 'Target';
-          const actualKey = Object.keys(d).find(k => k.toLowerCase().includes('actual out')) || 'Actual Output';
-          const capKey = Object.keys(d).find(k => k.toLowerCase().includes('shift capac')) || 'Shift Capacity';
+          // Dynamic Header mapping for absolute stability
+          const oeeKey = Object.keys(d).find(k => k.toUpperCase().includes('OEE')) || 'OEE';
+          const nptKey = Object.keys(d).find(k => k.toUpperCase().includes('NPT')) || 'NPT %';
+          const mttrKey = Object.keys(d).find(k => k.toUpperCase().includes('MTTR')) || 'MTTR';
+          const mtbfKey = Object.keys(d).find(k => k.toUpperCase().includes('MTBF')) || 'MTBF';
+          const targetKey = Object.keys(d).find(k => k.toUpperCase().includes('TARGET')) || 'Target';
+          const actualKey = Object.keys(d).find(k => k.toUpperCase().includes('ACTUAL')) || 'Actual Output';
+          const capKey = Object.keys(d).find(k => k.toUpperCase().includes('CAPAC')) || 'Shift Capacity';
 
           return {
             ...d,
-            parsedOEE: formatPercent(d.OEE),
-            parsedNPT: formatPercent(d['NPT %']),
-            parsedMTTR: safeNum(d.MTTR),
-            parsedMTBF: safeNum(d.MTBF),
-            parsedTarget: safeNum(d[targetKey] || d['Target']),
-            parsedActual: safeNum(d[actualKey] || d['Actual Output']),
-            parsedCap: safeNum(d[capKey] || d['Shift Capacity'])
+            parsedOEE: formatPercent(d[oeeKey]),
+            parsedNPT: formatPercent(d[nptKey]),
+            parsedMTTR: safeNum(d[mttrKey]),
+            parsedMTBF: safeNum(d[mtbfKey]),
+            parsedTarget: safeNum(d[targetKey]),
+            parsedActual: safeNum(d[actualKey]),
+            parsedCap: safeNum(d[capKey])
           };
         });
       }, [rawData, filters]);
