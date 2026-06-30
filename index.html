@@ -10,10 +10,7 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
-  
-  <!-- Pinned Recharts to prevent UMD crash -->
   <script src="https://cdn.jsdelivr.net/npm/recharts@2.1.9/umd/Recharts.min.js"></script>
-  
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script>window.process = { env: { NODE_ENV: 'production' } };</script>
 </head>
@@ -22,7 +19,7 @@
   <div id="root">
     <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh;">
       <div style="width: 50px; height: 50px; border: 5px solid #3b82f6; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></div>
-      <p style="margin-top: 20px; font-weight: 600;">Initializing Live Engine...</p>
+      <p style="margin-top: 20px; font-weight: 600;">Loading Real-Time Intelligence...</p>
       <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>
     </div>
   </div>
@@ -56,17 +53,26 @@
 
     // --- HELPER FUNCTIONS ---
     const safeNum = (val) => {
-      if (!val || typeof val !== 'string') return typeof val === 'number' ? val : 0;
-      if (val === '#DIV/0!' || val === '#REF!' || val === '#N/A' || val === '#VALUE!') return 0;
-      const num = parseFloat(val.replace(/,/g, ''));
+      if (val == null) return 0;
+      const strVal = val.toString().trim();
+      if (strVal === '#DIV/0!' || strVal === '#REF!' || strVal === '#N/A' || strVal === '#VALUE!') return 0;
+      const num = parseFloat(strVal.replace(/,/g, ''));
       return isNaN(num) ? 0 : num;
     };
 
     const formatPercent = (val) => {
-      if (typeof val === 'string' && val.includes('%')) return parseFloat(val.replace('%', ''));
-      const num = parseFloat(val);
+      if (val == null) return 0;
+      const strVal = val.toString().trim();
+      if (strVal.includes('%')) return parseFloat(strVal.replace('%', ''));
+      const num = parseFloat(strVal);
       if (num < 1 && num > 0) return num * 100;
       return isNaN(num) ? 0 : num;
+    };
+
+    const getMonthTime = (mStr) => {
+      if (!mStr) return 0;
+      const d = new Date(`01 ${mStr}`);
+      return isNaN(d) ? 0 : d.getTime();
     };
 
     // --- SMART CSV PARSERS ---
@@ -77,9 +83,15 @@
       const lines = csvStr.trim().split('\n').filter(line => line.trim() !== '');
       if (lines.length === 0) return [];
       
-      // Auto-detect header row (skip empty top rows)
-      let headerIdx = lines.findIndex(l => l.includes('SBU') || l.includes('Project Name') || l.includes('Card No'));
-      if (headerIdx === -1) headerIdx = 0; 
+      // Auto-detect header row (searches first 10 rows for known headers)
+      let headerIdx = 0; 
+      for (let i = 0; i < Math.min(lines.length, 10); i++) {
+        const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+        if (cols.includes('SBU') || cols.includes('Project Name') || cols.some(c => c.includes('Card No'))) {
+          headerIdx = i;
+          break;
+        }
+      }
       
       const headers = lines[headerIdx].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(h => h.replace(/^"|"$/g, '').trim());
       const data = [];
@@ -87,17 +99,23 @@
       for (let i = headerIdx + 1; i < lines.length; i++) {
         const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
         if (values.join('').trim() === '') continue; // Skip totally blank lines
+        
         const obj = {};
         headers.forEach((h, idx) => {
-          let val = values[idx] || '';
-          obj[h] = val.replace(/^"|"$/g, '').trim(); // Notice: if multiple columns share a header name (like MTTR), JS naturally keeps the LAST one.
+          if (h) {
+            obj[h] = (values[idx] || '').replace(/^"|"$/g, '').trim();
+          }
         });
-        data.push(obj);
+        
+        // Only keep rows that have actual core data mapped
+        if (obj['SBU'] || obj['Project Name'] || obj['Card No'] || obj['Card No.']) {
+          data.push(obj);
+        }
       }
       return data;
     };
 
-    // 2. Vertical Block Parser (Specifically built for the MOH COST Sheet structure)
+    // 2. Vertical Block Parser (Specifically built for the complex MOH COST Sheet structure)
     const parseMOHCSV = (csvStr) => {
       if (!csvStr) return [];
       const lines = csvStr.trim().split('\n').filter(line => line.trim() !== '');
@@ -105,69 +123,66 @@
       
       let currentSbu = 'Unknown SBU';
       let currentMonth = 'Latest';
-      let activeHeaders = [];
 
       for (let i = 0; i < lines.length; i++) {
-        const cols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(c => c.replace(/^"|"$/g, '').trim());
+        const rawCols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+        const cols = rawCols.map(c => c.replace(/^"|"$/g, '').trim());
         
-        // Detect SBU Block
-        const sbuCell = cols.find(c => c.includes('SBU DATASTREAMS:'));
-        if (sbuCell) {
-          currentSbu = sbuCell.split(':')[1].trim();
-        } 
-        // Detect Month row
-        else if (cols.includes('Month')) {
+        // 1. Detect SBU Names (Looks for isolated text rows or 'SBU DATASTREAMS:')
+        const nonEmpties = cols.filter(c => c !== '');
+        if (nonEmpties.length === 1 && (nonEmpties[0].toUpperCase().includes('SBU') || /^[A-Z]{3,6}(\s\d+)?$/.test(nonEmpties[0]))) {
+          currentSbu = nonEmpties[0].replace(/SBU DATASTREAMS:/i, '').replace(/SBU:/i, '').trim();
+        } else if (cols.find(c => c.toUpperCase().includes('SBU DATASTREAMS:'))) {
+          currentSbu = cols.find(c => c.toUpperCase().includes('SBU DATASTREAMS:')).split(':')[1].trim();
+        }
+        
+        // 2. Detect Month
+        if (cols.includes('Month')) {
           const mIdx = cols.indexOf('Month');
           if (cols[mIdx + 1]) currentMonth = cols[mIdx + 1];
-        } 
-        // Detect Header Row
-        else if (cols.includes('Transaction Name')) {
-          activeHeaders = cols;
         }
-        // Detect Data Row (Has a Serial Number in Col 0, and Transaction text in Col 1)
-        else if (!isNaN(parseInt(cols[0])) && cols[1] && cols[1].length > 2) {
-          let cost = 0;
-          let cpu = 0;
-          let foundActual = false;
-
-          // Dynamically find 'Actual' costs in the local header block
-          if (activeHeaders.length > 0) {
-            for (let j = 0; j < activeHeaders.length; j++) {
-              const h = activeHeaders[j].toLowerCase();
-              if (h.includes('actual') && (h.includes('cost') || h.includes('bdt') || h.includes('expense'))) {
-                foundActual = true;
-                if (h.includes('/') || h.includes('per') || h.includes('pcs') || h.includes('mt') || h.includes('cft')) {
-                  cpu += safeNum(cols[j]);
-                } else {
-                  cost += safeNum(cols[j]);
+        
+        // 3. Detect Data Row (must have text category and numbers)
+        const cat = cols[0] || cols[1];
+        if (cat && cat.length > 2 && !cat.toLowerCase().includes('total') && !cat.toLowerCase().includes('category') && !cat.toLowerCase().includes('transaction') && !cat.toLowerCase().includes('month')) {
+            const numVals = cols.map(c => safeNum(c));
+            
+            // If the row contains numbers, extract the cost logic
+            if (numVals.some(n => n > 0)) {
+                let cost = 0;
+                let cpu = 0;
+                
+                // Common cost columns in these complex sheets
+                if (numVals[2] > 0) cost = numVals[2];
+                else if (numVals[13] > 0) cost = numVals[13];
+                else if (numVals[14] > 0) cost = numVals[14];
+                else cost = Math.max(...numVals);
+                
+                if (numVals[3] > 0) cpu = numVals[3];
+                else if (numVals[15] > 0) cpu = numVals[15];
+                else if (numVals[16] > 0) cpu = numVals[16];
+                
+                if (cost > 0) {
+                    data.push({
+                        SBU: currentSbu,
+                        Month: currentMonth,
+                        Category: cat.replace(/^- |^MOH - |^MOH-/g, '').trim(),
+                        'MOH Cost': cost,
+                        'Cost per Unit': cpu
+                    });
                 }
-              }
             }
-          }
-
-          // Fallback if headers were messy or not found (Default to columns 13 and 14 for Cost and CPU)
-          if (!foundActual) {
-             cost = safeNum(cols[13]) || safeNum(cols[14]) || 0;
-             cpu = safeNum(cols[15]) || safeNum(cols[14]) || 0;
-          }
-
-          if (cost > 0 || cpu > 0 || cols[1].toLowerCase().includes('salary')) {
-            data.push({
-              SBU: currentSbu,
-              Month: currentMonth,
-              Category: cols[1].replace(/^- |^MOH - /g, '').trim(),
-              'MOH Cost': cost,
-              'Cost per Unit': cpu
-            });
-          }
         }
       }
       return data;
     };
 
     // --- SHARED COMPONENTS ---
-    const KPICard = ({ title, value, subtext, icon: IconComponent, colorClass }) => (
-      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex items-center space-x-4">
+    const KPICard = ({ title, value, subtext, icon: IconComponent, colorClass, onClick, isActive }) => (
+      <div 
+        onClick={onClick}
+        className={`bg-white p-5 rounded-2xl border ${isActive ? 'border-blue-500 ring-2 ring-blue-200 scale-105' : 'border-slate-100'} shadow-sm flex items-center space-x-4 transition-all hover:shadow-md ${onClick ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+      >
         <div className={`p-4 rounded-xl ${colorClass}`}>
           <IconComponent className="w-6 h-6 text-white" />
         </div>
@@ -215,7 +230,7 @@
     const SectionOEE = ({ rawData }) => {
       const [filters, setFilters] = useState({ sbu: 'All', month: 'All', section: 'All' });
 
-      // CASCADING FILTERS
+      // Dynamic Cascading Filters
       const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
       const months = [...new Set(rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => d.Month))].filter(Boolean);
       const sections = [...new Set(rawData.filter(d => 
@@ -228,20 +243,20 @@
           (filters.month === 'All' || d.Month === filters.month) &&
           (filters.section === 'All' || d.Section === filters.section)
         ).map(d => {
-          // Dynamically find keys in case headers got truncated in the export
-          const actualOutputKey = Object.keys(d).find(k => k.toLowerCase().includes('actual out')) || 'Actual Output';
+          // Dynamic Header mapping for stability
           const targetKey = Object.keys(d).find(k => k.toLowerCase().includes('target')) || 'Target';
-          const shiftCapKey = Object.keys(d).find(k => k.toLowerCase().includes('shift capac')) || 'Shift Capacity';
+          const actualKey = Object.keys(d).find(k => k.toLowerCase().includes('actual out')) || 'Actual Output';
+          const capKey = Object.keys(d).find(k => k.toLowerCase().includes('shift capac')) || 'Shift Capacity';
 
           return {
             ...d,
             parsedOEE: formatPercent(d.OEE),
             parsedNPT: formatPercent(d['NPT %']),
-            parsedMTTR: safeNum(d.MTTR), // Grabs overall MTTR
-            parsedMTBF: safeNum(d.MTBF), // Grabs overall MTBF
-            parsedTarget: safeNum(d[targetKey]),
-            parsedActual: safeNum(d[actualOutputKey]),
-            parsedCap: safeNum(d[shiftCapKey])
+            parsedMTTR: safeNum(d.MTTR),
+            parsedMTBF: safeNum(d.MTBF),
+            parsedTarget: safeNum(d[targetKey] || d['Target']),
+            parsedActual: safeNum(d[actualKey] || d['Actual Output']),
+            parsedCap: safeNum(d[capKey] || d['Shift Capacity'])
           };
         });
       }, [rawData, filters]);
@@ -283,10 +298,8 @@
             <KPICard title="Overall Avg OEE" value={`${avgOEE.toFixed(2)}%`} subtext="Target: 85%" icon={Activity} colorClass={avgOEE >= 85 ? 'bg-green-500' : 'bg-red-500'} />
             <KPICard title="Average NPT" value={`${avgNPT.toFixed(2)}%`} subtext="Non Productive Time" icon={Clock} colorClass="bg-amber-500" />
             <KPICard title="Avg MTTR" value={avgMTTR.toFixed(2)} subtext="Mean Time To Repair" icon={Wrench} colorClass="bg-orange-500" />
-            <KPICard title="Avg MTBF" value={avgMTBF.toFixed(2)} subtext="Mean Time Between Failures" icon={Activity} colorClass="bg-teal-500" />
-            <KPICard title="Total Shift Capacity" value={totalCap.toLocaleString(undefined, {maximumFractionDigits: 0})} subtext="Planned Availability" icon={Zap} colorClass="bg-purple-500" />
-            <KPICard title="Total Target" value={totalTarget.toLocaleString(undefined, {maximumFractionDigits: 0})} icon={Target} colorClass="bg-blue-500" />
-            <KPICard title="Actual Output" value={totalActual.toLocaleString(undefined, {maximumFractionDigits: 0})} icon={CheckCircle} colorClass="bg-indigo-500" />
+            <KPICard title="Total Target" value={totalTarget.toLocaleString(undefined, {maximumFractionDigits: 0})} subtext="Planned Output" icon={Target} colorClass="bg-blue-500" />
+            <KPICard title="Actual Output" value={totalActual.toLocaleString(undefined, {maximumFractionDigits: 0})} subtext="Achieved Volume" icon={CheckCircle} colorClass="bg-indigo-500" />
           </div>
 
           <AIInsightCard insights={aiInsights} />
@@ -331,7 +344,7 @@
             <div className="p-5 border-b border-slate-100"><h3 className="text-lg font-bold text-slate-800">Overall OEE Situation Log</h3></div>
             <div className="overflow-x-auto max-h-96">
               <table className="w-full text-sm text-left text-slate-600">
-                <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10">
                   <tr>
                     <th className="px-6 py-4">SBU</th>
                     <th className="px-6 py-4">Section</th>
@@ -370,14 +383,13 @@
 
       const filteredData = useMemo(() => {
         return rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => {
-          // Dynamic keys based on standard export vs user's specific sheet
-          const pvKey = Object.keys(d).find(k => k.toLowerCase().includes('planned')) || 'Sum of Planned';
-          const evKey = Object.keys(d).find(k => k.toLowerCase().includes('earned')) || 'Sum of Earned';
+          const pvKey = Object.keys(d).find(k => k.toLowerCase().includes('planned')) || 'Planned Value';
+          const evKey = Object.keys(d).find(k => k.toLowerCase().includes('earned')) || 'Earned Value';
           
           return {
             ...d,
-            parsedPV: safeNum(d[pvKey]),
-            parsedEV: safeNum(d[evKey]),
+            parsedPV: safeNum(d[pvKey] || d['Planned Value']),
+            parsedEV: safeNum(d[evKey] || d['Earned Value']),
             parsedSPI: safeNum(d.SPI)
           };
         });
@@ -428,7 +440,7 @@
             <div className="p-5 border-b border-slate-100"><h3 className="text-lg font-bold text-slate-800">Project Action Plans</h3></div>
             <div className="overflow-x-auto max-h-96">
               <table className="w-full text-sm text-left text-slate-600">
-                <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10">
                   <tr>
                     <th className="px-6 py-4">SBU</th>
                     <th className="px-6 py-4">Project Name</th>
@@ -442,7 +454,7 @@
                   {filteredData.map((row, idx) => (
                     <tr key={idx} className="bg-white border-b border-slate-50 hover:bg-slate-50">
                       <td className="px-6 py-4 font-semibold text-slate-800">{row.SBU}</td>
-                      <td className="px-6 py-4">{row['Project Name']}</td>
+                      <td className="px-6 py-4 font-medium">{row['Project Name']}</td>
                       <td className="px-6 py-4">{row.parsedPV.toLocaleString()}</td>
                       <td className="px-6 py-4">{row.parsedEV.toLocaleString()}</td>
                       <td className={`px-6 py-4 font-bold ${row.parsedSPI >= 1 ? 'text-emerald-600' : 'text-rose-600'}`}>{row.parsedSPI.toFixed(2)}</td>
@@ -458,33 +470,47 @@
     };
 
     const SectionCards = ({ rawData, title }) => {
-      const [filters, setFilters] = useState({ sbu: 'All', month: 'All' });
+      const [filters, setFilters] = useState({ sbu: 'All', month: 'All', status: 'All' });
       
       const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
       const months = [...new Set(rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => d.Month || d['Created Month']))].filter(Boolean);
 
-      const filteredData = useMemo(() => {
-        return rawData.filter(d => {
+      // Filter and SORT by Month Descending
+      const sortedFilteredData = useMemo(() => {
+        const preFiltered = rawData.filter(d => {
           const dMonth = d.Month || d['Created Month'];
           return (filters.sbu === 'All' || d.SBU === filters.sbu) &&
                  (filters.month === 'All' || dMonth === filters.month);
         });
-      }, [rawData, filters]);
 
-      const completed = filteredData.filter(d => d.Status === 'Completed').length;
-      const rejected = filteredData.filter(d => d.Status === 'Rejected').length;
-      const ongoing = filteredData.filter(d => d.Status === 'Ongoing').length;
-      const initiated = filteredData.filter(d => d.Status === 'Initiated').length;
-      const total = filteredData.length;
+        return preFiltered.sort((a, b) => {
+          const timeA = getMonthTime(a.Month || a['Created Month']);
+          const timeB = getMonthTime(b.Month || b['Created Month']);
+          return timeB - timeA; // Descending (Newer first)
+        });
+      }, [rawData, filters.sbu, filters.month]);
+
+      // Apply Status filter only for the table view so cards/charts don't disappear
+      const displayData = useMemo(() => {
+         return sortedFilteredData.filter(d => filters.status === 'All' || d.Status === filters.status);
+      }, [sortedFilteredData, filters.status]);
+
+      const completed = sortedFilteredData.filter(d => d.Status === 'Completed').length;
+      const rejected = sortedFilteredData.filter(d => d.Status === 'Rejected').length;
+      const ongoing = sortedFilteredData.filter(d => d.Status === 'Ongoing').length;
+      const initiated = sortedFilteredData.filter(d => d.Status === 'Initiated').length;
+      const total = sortedFilteredData.length;
 
       const pieData = [
-        { name: 'Completed', value: completed },
-        { name: 'Rejected', value: rejected },
-        { name: 'Ongoing', value: ongoing },
-        { name: 'Initiated', value: initiated }
+        { name: 'Completed', value: completed, color: '#10b981' },
+        { name: 'Rejected', value: rejected, color: '#ef4444' },
+        { name: 'Ongoing', value: ongoing, color: '#f59e0b' },
+        { name: 'Initiated', value: initiated, color: '#3b82f6' }
       ].filter(d => d.value > 0);
 
-      const PIE_COLORS = ['#10b981', '#ef4444', '#f59e0b', '#3b82f6'];
+      const handleStatusClick = (status) => {
+        setFilters(prev => ({ ...prev, status: prev.status === status ? 'All' : status }));
+      };
 
       const aiInsights = [];
       if (total > 0) {
@@ -497,29 +523,34 @@
         <div className="space-y-6">
           <div className="flex bg-slate-100 p-4 rounded-xl items-center space-x-6 overflow-x-auto">
             <FilterIcon className="w-5 h-5 text-slate-500 shrink-0" />
-            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({sbu: v, month: 'All'})} />
-            <FilterSelect label="Month" value={filters.month} options={months} onChange={(v) => setFilters({...filters, month: v})} />
+            <FilterSelect label="SBU" value={filters.sbu} options={sbus} onChange={(v) => setFilters({sbu: v, month: 'All', status: 'All'})} />
+            <FilterSelect label="Month" value={filters.month} options={months} onChange={(v) => setFilters({...filters, month: v, status: 'All'})} />
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-            <KPICard title="Total Cards" value={total} icon={FileText} colorClass="bg-slate-600" />
-            <KPICard title="Completed" value={completed} icon={CheckCircle} colorClass="bg-emerald-500" />
-            <KPICard title="Rejected" value={rejected} icon={ShieldAlert} colorClass="bg-rose-500" />
-            <KPICard title="Ongoing" value={ongoing} icon={Activity} colorClass="bg-amber-500" />
-            <KPICard title="Initiated" value={initiated} icon={Zap} colorClass="bg-sky-500" />
+            <KPICard title="Total Cards" value={total} icon={FileText} colorClass="bg-slate-600" onClick={() => handleStatusClick('All')} isActive={filters.status === 'All'} />
+            <KPICard title="Completed" value={completed} icon={CheckCircle} colorClass="bg-emerald-500" onClick={() => handleStatusClick('Completed')} isActive={filters.status === 'Completed'} />
+            <KPICard title="Rejected" value={rejected} icon={ShieldAlert} colorClass="bg-rose-500" onClick={() => handleStatusClick('Rejected')} isActive={filters.status === 'Rejected'} />
+            <KPICard title="Ongoing" value={ongoing} icon={Activity} colorClass="bg-amber-500" onClick={() => handleStatusClick('Ongoing')} isActive={filters.status === 'Ongoing'} />
+            <KPICard title="Initiated" value={initiated} icon={Zap} colorClass="bg-sky-500" onClick={() => handleStatusClick('Initiated')} isActive={filters.status === 'Initiated'} />
           </div>
 
           <AIInsightCard insights={aiInsights} />
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <div className="lg:col-span-1 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
               <h3 className="text-lg font-bold text-slate-800 mb-2">Status Distribution</h3>
-              <div className="h-64">
+              <p className="text-xs text-slate-400 mb-4">Click a slice to filter the table</p>
+              <div className="h-64 flex-1">
                 {pieData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
-                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />)}
+                      <Pie 
+                        data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value"
+                        onClick={(entry) => handleStatusClick(entry.name)}
+                        className="cursor-pointer hover:opacity-80 transition-opacity"
+                      >
+                        {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                       </Pie>
                       <Tooltip />
                       <Legend verticalAlign="bottom" height={36}/>
@@ -533,11 +564,14 @@
 
             <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
               <div className="p-5 border-b border-slate-100 flex justify-between items-center">
-                <h3 className="text-lg font-bold text-slate-800">Latest {title} Situations</h3>
+                <h3 className="text-lg font-bold text-slate-800">
+                  Latest {title} Situations 
+                  {filters.status !== 'All' && <span className="ml-2 text-sm text-blue-600 font-semibold">(Filtered by {filters.status})</span>}
+                </h3>
               </div>
-              <div className="overflow-y-auto h-72">
+              <div className="overflow-y-auto h-80">
                 <table className="w-full text-sm text-left text-slate-600">
-                  <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                  <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10">
                     <tr>
                       <th className="px-6 py-3">Card No.</th>
                       <th className="px-6 py-3">SBU</th>
@@ -547,13 +581,21 @@
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredData.map((row, idx) => (
+                    {displayData.map((row, idx) => (
                       <tr key={idx} className="bg-white border-b border-slate-50 hover:bg-slate-50">
                         <td className="px-6 py-3 font-medium text-slate-800">{row['Card No.'] || row['Card No']}</td>
                         <td className="px-6 py-3">{row.SBU}</td>
                         <td className="px-6 py-3">{row.Section}</td>
-                        <td className="px-6 py-3 font-bold">{row.Status}</td>
-                        <td className="px-6 py-3 text-slate-400">{row.Month || row['Created Month']}</td>
+                        <td className="px-6 py-3 font-bold">
+                          <span className={`px-2 py-1 rounded-md text-xs ${
+                            row.Status === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
+                            row.Status === 'Rejected' ? 'bg-rose-100 text-rose-700' :
+                            row.Status === 'Ongoing' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'
+                          }`}>
+                            {row.Status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-3 text-slate-400 font-semibold">{row.Month || row['Created Month']}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -607,7 +649,7 @@
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <KPICard title="Total MOH Cost" value={`৳${totalCost.toLocaleString()}`} icon={Zap} colorClass="bg-violet-600" />
+            <KPICard title="Total MOH Cost" value={`৳${totalCost.toLocaleString(undefined, {maximumFractionDigits: 2})}`} icon={Zap} colorClass="bg-violet-600" />
             <KPICard title="Avg Cost Per Unit" value={`৳${avgCpu.toFixed(2)}`} icon={Activity} colorClass="bg-fuchsia-500" />
           </div>
 
@@ -632,7 +674,7 @@
             <div className="p-5 border-b border-slate-100"><h3 className="text-lg font-bold text-slate-800">MOH Cost Situations</h3></div>
             <div className="overflow-x-auto max-h-96">
               <table className="w-full text-sm text-left text-slate-600">
-                <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+                <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10">
                   <tr>
                     <th className="px-6 py-4">SBU</th>
                     <th className="px-6 py-4">Month</th>
