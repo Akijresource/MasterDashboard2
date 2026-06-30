@@ -75,12 +75,25 @@
       return isNaN(d) ? 0 : d.getTime();
     };
 
+    const getVal = (row, exactMatches, fuzzyMatch) => {
+      // 1. Check for exact exact match first (case sensitive usually, but we check loosely)
+      for (const exact of exactMatches) {
+        if (row[exact] !== undefined && row[exact] !== '') return row[exact];
+      }
+      // 2. Fallback to fuzzy match if exact match fails
+      const key = Object.keys(row).find(k => k.toUpperCase().includes(fuzzyMatch.toUpperCase()));
+      return key ? row[key] : null;
+    };
+
     // --- SMART CSV PARSERS ---
     
     // 1. Standard Parser (For OEE, RACI, IC, PC)
     const parseSmartCSV = (csvStr) => {
       if (!csvStr) return [];
-      const lines = csvStr.trim().split('\n').filter(line => line.trim() !== '');
+      
+      // FIX: Replace newlines inside quotes with spaces so the line splitter doesn't break
+      const cleanCSV = csvStr.replace(/"([^"]*)"/g, (match, p1) => `"${p1.replace(/\r?\n/g, ' ')}"`);
+      const lines = cleanCSV.trim().split('\n').filter(line => line.trim() !== '');
       if (lines.length === 0) return [];
       
       // Auto-detect header row (searches first 10 rows for known headers)
@@ -98,7 +111,7 @@
       
       for (let i = headerIdx + 1; i < lines.length; i++) {
         const values = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-        if (values.join('').trim() === '') continue; // Skip totally blank lines
+        if (values.join('').trim() === '') continue;
         
         const obj = {};
         let hasData = false;
@@ -110,7 +123,7 @@
           }
         });
         
-        // Standardize Keys for consistent filtering (handles variations in dataset headers)
+        // Standardize Keys for consistent filtering
         const kSbu = Object.keys(obj).find(k => k.toUpperCase().includes('SBU'));
         if (kSbu && !obj['SBU']) obj['SBU'] = obj[kSbu];
 
@@ -120,18 +133,20 @@
         const kSec = Object.keys(obj).find(k => k.toUpperCase() === 'SECTION' || k.toUpperCase() === 'DEPARTMENT');
         if (kSec && !obj['Section']) obj['Section'] = obj[kSec];
         
-        // Push rows that successfully extracted at least some valid data
-        if (hasData) {
+        if (hasData && obj['SBU']) { // Make sure it at least grabbed an SBU
           data.push(obj);
         }
       }
       return data;
     };
 
-    // 2. Vertical Block Parser (Specifically built for the complex MOH COST Sheet structure)
+    // 2. Vertical Block Parser
     const parseMOHCSV = (csvStr) => {
       if (!csvStr) return [];
-      const lines = csvStr.trim().split('\n').filter(line => line.trim() !== '');
+      
+      // FIX: Replace newlines inside quotes
+      const cleanCSV = csvStr.replace(/"([^"]*)"/g, (match, p1) => `"${p1.replace(/\r?\n/g, ' ')}"`);
+      const lines = cleanCSV.trim().split('\n').filter(line => line.trim() !== '');
       const data = [];
       
       let currentSbu = 'Unknown SBU';
@@ -141,7 +156,6 @@
         const rawCols = lines[i].split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
         const cols = rawCols.map(c => c.replace(/^"|"$/g, '').trim());
         
-        // 1. Detect SBU Names (Looks for isolated text rows or 'SBU DATASTREAMS:')
         const nonEmpties = cols.filter(c => c !== '');
         if (nonEmpties.length === 1 && (nonEmpties[0].toUpperCase().includes('SBU') || /^[A-Z]{3,6}(\s\d+)?$/.test(nonEmpties[0]))) {
           currentSbu = nonEmpties[0].replace(/SBU DATASTREAMS:/i, '').replace(/SBU:/i, '').trim();
@@ -149,23 +163,19 @@
           currentSbu = cols.find(c => c.toUpperCase().includes('SBU DATASTREAMS:')).split(':')[1].trim();
         }
         
-        // 2. Detect Month
         if (cols.includes('Month')) {
           const mIdx = cols.indexOf('Month');
           if (cols[mIdx + 1]) currentMonth = cols[mIdx + 1];
         }
         
-        // 3. Detect Data Row (must have text category and numbers)
         const cat = cols[0] || cols[1];
         if (cat && cat.length > 2 && !cat.toLowerCase().includes('total') && !cat.toLowerCase().includes('category') && !cat.toLowerCase().includes('transaction') && !cat.toLowerCase().includes('month')) {
             const numVals = cols.map(c => safeNum(c));
             
-            // If the row contains numbers, extract the cost logic
             if (numVals.some(n => n > 0)) {
                 let cost = 0;
                 let cpu = 0;
                 
-                // Common cost columns in these complex sheets
                 if (numVals[2] > 0) cost = numVals[2];
                 else if (numVals[13] > 0) cost = numVals[13];
                 else if (numVals[14] > 0) cost = numVals[14];
@@ -256,24 +266,15 @@
           (filters.month === 'All' || d.Month === filters.month) &&
           (filters.section === 'All' || d.Section === filters.section)
         ).map(d => {
-          // Dynamic Header mapping for absolute stability
-          const oeeKey = Object.keys(d).find(k => k.toUpperCase().includes('OEE')) || 'OEE';
-          const nptKey = Object.keys(d).find(k => k.toUpperCase().includes('NPT')) || 'NPT %';
-          const mttrKey = Object.keys(d).find(k => k.toUpperCase().includes('MTTR')) || 'MTTR';
-          const mtbfKey = Object.keys(d).find(k => k.toUpperCase().includes('MTBF')) || 'MTBF';
-          const targetKey = Object.keys(d).find(k => k.toUpperCase().includes('TARGET')) || 'Target';
-          const actualKey = Object.keys(d).find(k => k.toUpperCase().includes('ACTUAL')) || 'Actual Output';
-          const capKey = Object.keys(d).find(k => k.toUpperCase().includes('CAPAC')) || 'Shift Capacity';
-
           return {
             ...d,
-            parsedOEE: formatPercent(d[oeeKey]),
-            parsedNPT: formatPercent(d[nptKey]),
-            parsedMTTR: safeNum(d[mttrKey]),
-            parsedMTBF: safeNum(d[mtbfKey]),
-            parsedTarget: safeNum(d[targetKey]),
-            parsedActual: safeNum(d[actualKey]),
-            parsedCap: safeNum(d[capKey])
+            parsedOEE: formatPercent(getVal(d, ['OEE', 'OEE Actual'], 'OEE')),
+            parsedNPT: formatPercent(getVal(d, ['NPT %', 'NPT'], 'NPT')),
+            parsedMTTR: safeNum(getVal(d, ['MTTR'], 'MTTR')),
+            parsedMTBF: safeNum(getVal(d, ['MTBF'], 'MTBF')),
+            parsedTarget: safeNum(getVal(d, ['Target', 'TARGET'], 'TARGET')),
+            parsedActual: safeNum(getVal(d, ['Actual Output', 'ACTUAL OUTPUT', 'Actual'], 'ACTUAL')),
+            parsedCap: safeNum(getVal(d, ['Shift Capacity', 'SHIFT CAPACITY', 'Capacity'], 'CAPAC'))
           };
         });
       }, [rawData, filters]);
@@ -283,8 +284,6 @@
       const totalTarget = filteredData.reduce((a, c) => a + c.parsedTarget, 0);
       const totalActual = filteredData.reduce((a, c) => a + c.parsedActual, 0);
       const avgMTTR = filteredData.length ? (filteredData.reduce((a, c) => a + c.parsedMTTR, 0) / filteredData.length) : 0;
-      const avgMTBF = filteredData.length ? (filteredData.reduce((a, c) => a + c.parsedMTBF, 0) / filteredData.length) : 0;
-      const totalCap = filteredData.reduce((a, c) => a + c.parsedCap, 0);
 
       const aiInsights = useMemo(() => {
         const insights = [];
@@ -400,13 +399,10 @@
 
       const filteredData = useMemo(() => {
         return rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => {
-          const pvKey = Object.keys(d).find(k => k.toLowerCase().includes('planned')) || 'Planned Value';
-          const evKey = Object.keys(d).find(k => k.toLowerCase().includes('earned')) || 'Earned Value';
-          
           return {
             ...d,
-            parsedPV: safeNum(d[pvKey] || d['Planned Value']),
-            parsedEV: safeNum(d[evKey] || d['Earned Value']),
+            parsedPV: safeNum(getVal(d, ['Planned Value', 'PLANNED VALUE'], 'Planned')),
+            parsedEV: safeNum(getVal(d, ['Earned Value', 'EARNED VALUE'], 'Earned')),
             parsedSPI: safeNum(d.SPI)
           };
         });
@@ -492,7 +488,6 @@
       const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
       const months = [...new Set(rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => d.Month || d['Created Month']))].filter(Boolean);
 
-      // Filter and SORT by Month Descending
       const sortedFilteredData = useMemo(() => {
         const preFiltered = rawData.filter(d => {
           const dMonth = d.Month || d['Created Month'];
@@ -503,11 +498,10 @@
         return preFiltered.sort((a, b) => {
           const timeA = getMonthTime(a.Month || a['Created Month']);
           const timeB = getMonthTime(b.Month || b['Created Month']);
-          return timeB - timeA; // Descending (Newer first)
+          return timeB - timeA; 
         });
       }, [rawData, filters.sbu, filters.month]);
 
-      // Apply Status filter only for the table view so cards/charts don't disappear
       const displayData = useMemo(() => {
          return sortedFilteredData.filter(d => filters.status === 'All' || d.Status === filters.status);
       }, [sortedFilteredData, filters.status]);
