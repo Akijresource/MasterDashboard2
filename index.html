@@ -287,8 +287,8 @@
 
       const aiInsights = useMemo(() => {
         const insights = [];
-        if (avgOEE < 85 && filteredData.length > 0) {
-          insights.push(`The Average OEE is currently ${avgOEE.toFixed(2)}%, falling below the critical 85% target.`);
+        if (avgOEE < 70 && filteredData.length > 0) {
+          insights.push(`The Average OEE is currently ${avgOEE.toFixed(2)}%, falling below the critical 70% target.`);
           const worstNpt = [...filteredData].sort((a, b) => b.parsedNPT - a.parsedNPT)[0];
           if (worstNpt && worstNpt.parsedNPT > 20) {
             insights.push(`Critical Bottleneck: The ${worstNpt.SBU} - ${worstNpt.Section || 'General'} section is experiencing exceptionally high Non-Productive Time (NPT) at ${worstNpt.parsedNPT.toFixed(2)}%.`);
@@ -311,7 +311,7 @@
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KPICard title="Overall Avg OEE" value={`${avgOEE.toFixed(2)}%`} subtext="Target: 85%" icon={Activity} colorClass={avgOEE >= 85 ? 'bg-green-500' : 'bg-red-500'} />
+            <KPICard title="Overall Avg OEE" value={`${avgOEE.toFixed(2)}%`} subtext="Target: 70%" icon={Activity} colorClass={avgOEE >= 70 ? 'bg-green-500' : 'bg-red-500'} />
             <KPICard title="Average NPT" value={`${avgNPT.toFixed(2)}%`} subtext="Non Productive Time" icon={Clock} colorClass="bg-amber-500" />
             <KPICard title="Avg MTTR" value={avgMTTR.toFixed(2)} subtext="Mean Time To Repair" icon={Wrench} colorClass="bg-orange-500" />
             <KPICard title="Total Target" value={totalTarget.toLocaleString(undefined, {maximumFractionDigits: 0})} subtext="Planned Output" icon={Target} colorClass="bg-blue-500" />
@@ -339,7 +339,7 @@
             </div>
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center"><Activity className="w-5 h-5 mr-2 text-indigo-500"/> OEE vs Target (85%)</h3>
+              <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center"><Activity className="w-5 h-5 mr-2 text-indigo-500"/> OEE vs Target (70%)</h3>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={filteredData}>
@@ -349,7 +349,7 @@
                     <Tooltip cursor={{fill: '#f1f5f9'}} />
                     <Legend />
                     <Line type="monotone" dataKey="parsedOEE" name="Actual OEE %" stroke="#6366f1" strokeWidth={3} dot={{r: 4, fill: '#6366f1'}} />
-                    <Line type="monotone" dataKey={() => 85} name="Target 85%" stroke="#ef4444" strokeDasharray="5 5" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey={() => 70} name="Target 70%" stroke="#ef4444" strokeDasharray="5 5" strokeWidth={2} dot={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -378,7 +378,7 @@
                       <td className="px-6 py-4 font-semibold text-slate-800">{row.SBU}</td>
                       <td className="px-6 py-4">{row.Section}</td>
                       <td className="px-6 py-4">{row.Month}</td>
-                      <td className={`px-6 py-4 font-bold ${row.parsedOEE >= 85 ? 'text-green-600' : 'text-red-600'}`}>{row.parsedOEE.toFixed(2)}%</td>
+                      <td className={`px-6 py-4 font-bold ${row.parsedOEE >= 70 ? 'text-green-600' : 'text-red-600'}`}>{row.parsedOEE.toFixed(2)}%</td>
                       <td className="px-6 py-4">{row.parsedNPT.toFixed(2)}%</td>
                       <td className="px-6 py-4">{row.parsedTarget.toLocaleString()}</td>
                       <td className="px-6 py-4">{row.parsedActual.toLocaleString()}</td>
