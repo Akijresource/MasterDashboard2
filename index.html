@@ -488,6 +488,12 @@
       const sbus = [...new Set(rawData.map(d => d.SBU))].filter(Boolean);
       const months = [...new Set(rawData.filter(d => filters.sbu === 'All' || d.SBU === filters.sbu).map(d => d.Month || d['Created Month']))].filter(Boolean);
 
+      // Detect any custom columns added to the Google Sheet automatically
+      const standardKeys = ['SBU', 'Section', 'Status', 'Month', 'Card No.', 'Card No', 'Created Month', 'Created Date'];
+      const extraKeys = useMemo(() => {
+        return [...new Set(rawData.flatMap(Object.keys))].filter(k => !standardKeys.includes(k) && k.trim() !== '');
+      }, [rawData]);
+
       const sortedFilteredData = useMemo(() => {
         const preFiltered = rawData.filter(d => {
           const dMonth = d.Month || d['Created Month'];
@@ -528,6 +534,18 @@
         const rejectRate = (rejected / total) * 100;
         if (rejectRate > 15) aiInsights.push(`High rejection anomaly detected: ${rejectRate.toFixed(1)}% of cards are being rejected.`);
         if (ongoing > completed) aiInsights.push(`High WIP (Work in Progress): Ongoing items currently outnumber completed items.`);
+        
+        // AI Situation Analysis: Extract descriptions from the latest cards
+        const recentCardsWithDesc = sortedFilteredData.filter(d => {
+          const descKey = Object.keys(d).find(k => k.toLowerCase().includes('desc') || k.toLowerCase().includes('remark') || k.toLowerCase().includes('action'));
+          return descKey && d[descKey] && d[descKey].trim() !== '';
+        }).slice(0, 2);
+
+        recentCardsWithDesc.forEach(card => {
+          const descKey = Object.keys(card).find(k => k.toLowerCase().includes('desc') || k.toLowerCase().includes('remark') || k.toLowerCase().includes('action'));
+          const cardNo = card['Card No.'] || card['Card No'] || 'Unknown Card';
+          aiInsights.push(`Situational Update [${cardNo} - ${card.Status}]: ${card[descKey]}`);
+        });
       }
 
       return (
@@ -584,20 +602,21 @@
                 <table className="w-full text-sm text-left text-slate-600">
                   <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10">
                     <tr>
-                      <th className="px-6 py-3">Card No.</th>
-                      <th className="px-6 py-3">SBU</th>
-                      <th className="px-6 py-3">Section</th>
-                      <th className="px-6 py-3">Status</th>
-                      <th className="px-6 py-3">Month</th>
+                      <th className="px-6 py-3 whitespace-nowrap">Card No.</th>
+                      <th className="px-6 py-3 whitespace-nowrap">SBU</th>
+                      <th className="px-6 py-3 whitespace-nowrap">Section</th>
+                      <th className="px-6 py-3 whitespace-nowrap">Status</th>
+                      <th className="px-6 py-3 whitespace-nowrap">Month</th>
+                      {extraKeys.map(k => <th key={k} className="px-6 py-3 whitespace-nowrap">{k}</th>)}
                     </tr>
                   </thead>
                   <tbody>
                     {displayData.map((row, idx) => (
                       <tr key={idx} className="bg-white border-b border-slate-50 hover:bg-slate-50">
-                        <td className="px-6 py-3 font-medium text-slate-800">{row['Card No.'] || row['Card No']}</td>
-                        <td className="px-6 py-3">{row.SBU}</td>
-                        <td className="px-6 py-3">{row.Section}</td>
-                        <td className="px-6 py-3 font-bold">
+                        <td className="px-6 py-3 font-medium text-slate-800 whitespace-nowrap">{row['Card No.'] || row['Card No']}</td>
+                        <td className="px-6 py-3 whitespace-nowrap">{row.SBU}</td>
+                        <td className="px-6 py-3 whitespace-nowrap">{row.Section}</td>
+                        <td className="px-6 py-3 font-bold whitespace-nowrap">
                           <span className={`px-2 py-1 rounded-md text-xs ${
                             row.Status === 'Completed' ? 'bg-emerald-100 text-emerald-700' :
                             row.Status === 'Rejected' ? 'bg-rose-100 text-rose-700' :
@@ -606,7 +625,12 @@
                             {row.Status}
                           </span>
                         </td>
-                        <td className="px-6 py-3 text-slate-400 font-semibold">{row.Month || row['Created Month']}</td>
+                        <td className="px-6 py-3 text-slate-400 font-semibold whitespace-nowrap">{row.Month || row['Created Month']}</td>
+                        {extraKeys.map(k => (
+                          <td key={k} className="px-6 py-3 max-w-[200px] truncate" title={row[k]}>
+                            {row[k] || '-'}
+                          </td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>
@@ -755,7 +779,7 @@
 
       const TABS = [
         { id: 'OEE', label: 'SBU Wise OEE' },
-        { id: 'RACI', label: 'Civil Projects' },
+        { id: 'RACI', label: 'RACI Import' },
         { id: 'IC', label: 'IC Cards' },
         { id: 'PC', label: 'PC Cards' },
         { id: 'MOH', label: 'MOH Cost' },
@@ -795,7 +819,7 @@
                   <h1 className="text-xl font-black text-slate-800 tracking-tight">DCOO Executive Dashboard</h1>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-0.5 flex items-center">
                     <span className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse"></span>
-                    Sohanur Rahaman Sohan, Deputy Chief Operating Officer, Akij Resource
+                    Live Data Connected
                   </p>
                 </div>
               </div>
